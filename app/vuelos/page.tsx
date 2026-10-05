@@ -110,17 +110,7 @@ export default async function FlightSearchPage({
     : null;
 
   return (
-    <main className="min-h-screen bg-[#f1f3ed] font-sans text-[#19332d]">
-      <header className="mx-auto flex h-[72px] max-w-7xl items-center justify-between px-5 sm:px-8">
-        <a href="/vuelos" className="flex items-center gap-3" aria-label="Vuelos, inicio">
-          <span className="grid size-10 place-items-center rounded-lg bg-[#174b3f] text-white">
-            <Plane size={20} aria-hidden="true" />
-          </span>
-          <span className="text-sm font-semibold tracking-[0.08em]">AEROLÍNEA</span>
-        </a>
-        <span className="hidden text-sm text-[#64766f] sm:block">Vuelos nacionales e internacionales</span>
-      </header>
-
+    <main className="min-h-[calc(100vh-72px)] bg-[#f1f3ed] font-sans text-[#19332d]">
       <section className="relative isolate overflow-hidden bg-[#12372e] text-white">
         <div
           className="absolute inset-0 -z-20 bg-cover bg-[center_42%]"
