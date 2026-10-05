@@ -1,0 +1,111 @@
+erDiagram
+    ROL ||--o{ USUARIO : asigna
+    USUARIO ||--o{ TRANSACCION_COMPRA : realiza
+
+    AEROPUERTO ||--o{ VUELO : origen
+    AEROPUERTO ||--o{ VUELO : destino
+
+    VUELO ||--o{ VUELO_DIA_SEMANA : opera_en
+    VUELO ||--o{ INSTANCIA_VUELO : calendariza
+
+    TRANSACCION_COMPRA ||--|| PAGO : registra
+    TRANSACCION_COMPRA ||--|| FACTURA : emite
+    TRANSACCION_COMPRA ||--|{ PASAJE : contiene
+
+    INSTANCIA_VUELO ||--o{ PASAJE : ocupa
+
+    ROL {
+        int id PK
+        varchar nombre
+        boolean deleted
+    }
+
+    USUARIO {
+        bigint id PK
+        int role_id FK
+        varchar name
+        varchar apellido
+        varchar email
+        varchar clerk_id UK
+        boolean deleted
+    }
+
+    AEROPUERTO {
+        char_3 iata_code PK
+        varchar nombre
+        varchar ciudad
+        varchar provincia
+    }
+
+    VUELO {
+        bigint id PK
+        varchar numero_vuelo
+        char_3 origen_iata FK
+        char_3 destino_iata FK
+        time hora_salida
+        time hora_llegada
+        date vigencia_desde
+        date vigencia_hasta
+        int capacidad_economy
+        int capacidad_primera
+        decimal precio_economy
+        decimal precio_primera
+        boolean activo
+        boolean deleted
+    }
+
+    VUELO_DIA_SEMANA {
+        bigint vuelo_id PK, FK
+        smallint dia_semana PK "1=Lunes .. 7=Domingo"
+    }
+
+    INSTANCIA_VUELO {
+        bigint id PK
+        bigint vuelo_id FK
+        date fecha_salida
+        varchar estado "PROGRAMADO, DEMORADO, CANCELADO, FINALIZADO"
+        boolean deleted
+    }
+
+    TRANSACCION_COMPRA {
+        bigint id PK
+        bigint usuario_id FK "nullable para compra como invitado"
+        varchar email_contacto
+        timestamp fecha_creacion
+        varchar estado "PENDIENTE, CONFIRMADA, RECHAZADA, REEMBOLSADA"
+        decimal total
+        boolean deleted
+    }
+
+    PAGO {
+        bigint id PK
+        bigint transaccion_id FK, UK
+        varchar metodo_pago "TARJETA_CREDITO, DEBITO, ETC"
+        varchar id_transaccion_pasarela
+        decimal monto
+        timestamp fecha_pago
+        varchar estado "APROBADO, RECHAZADO, PENDIENTE"
+    }
+
+    FACTURA {
+        bigint id PK
+        bigint transaccion_id FK, UK
+        varchar numero_factura UK
+        varchar tipo_factura
+        varchar nombre_razon_social
+        varchar identificacion_fiscal
+        decimal total
+        timestamp fecha_emision
+    }
+
+    PASAJE {
+        bigint codigo PK
+        bigint transaccion_id FK
+        bigint instancia_vuelo_id FK
+        varchar clase "ECONOMY, PRIMERA"
+        varchar pasajero_nombre
+        varchar pasajero_apellido
+        varchar pasajero_documento
+        varchar numero_asiento
+        varchar estado "EMITIDO, CANCELADO, CHECK_IN"
+    }
