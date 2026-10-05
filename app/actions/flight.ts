@@ -16,8 +16,9 @@ export async function createFlight(data: FlightFormValues): Promise<ActionRespon
 
   if (!validationResult.success) {
     const fieldErrors = validationResult.error.flatten().fieldErrors;
-    const firstKey = Object.keys(fieldErrors)[0];
-    const firstError = firstKey && fieldErrors[firstKey] ? fieldErrors[firstKey][0] : "Revisa los campos.";
+    const firstIssue = validationResult.error.issues[0];
+    const firstKey = firstIssue?.path.join(".");
+    const firstError = firstIssue?.message ?? "Revisa los campos.";
     
     return {
       success: false,
@@ -94,10 +95,15 @@ export async function createFlight(data: FlightFormValues): Promise<ActionRespon
       success: true,
       message: "El vuelo se creó exitosamente.",
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error al crear vuelo:", error);
+    const errorCode =
+      typeof error === "object" && error !== null && "code" in error
+        ? error.code
+        : undefined;
+    const errorMessage = error instanceof Error ? error.message : "No se pudo crear el vuelo.";
 
-    if (error?.code === "P2002") {
+    if (errorCode === "P2002") {
       return {
         success: false,
         message: "Ya existe un vuelo con ese número de vuelo.",
@@ -106,7 +112,7 @@ export async function createFlight(data: FlightFormValues): Promise<ActionRespon
 
     return {
       success: false,
-      message: `Error inesperado: ${error?.message || "No se pudo crear el vuelo."}`,
+      message: `Error inesperado: ${errorMessage}`,
     };
   }
 }
