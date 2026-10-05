@@ -135,8 +135,12 @@ Cada commit debe seguir el estándar:
    # URL base de la app
    NEXT_PUBLIC_APP_URL="http://localhost:3000"
    ```
-
-4. **Configurar y sincronizar la base de datos (Prisma):**
+4. **Añadir dependencias dependendencias dotenv**
+   Añade dependencias necesarias:
+   ```bash
+   pnpm add dotenv
+   ```
+5. **Configurar y sincronizar la base de datos (Prisma):**
    Genera el cliente de Prisma fuertemente tipado:
    ```bash
    pnpm prisma generate
@@ -146,7 +150,7 @@ Cada commit debe seguir el estándar:
    pnpm prisma db push
    ```
 
-5. **Iniciar el servidor de desarrollo:**
+6. **Iniciar el servidor de desarrollo:**
    ```bash
    pnpm dev
    ```
