@@ -9,7 +9,7 @@ Este documento registra formalmente las decisiones clave de arquitectura y dise�
 - [ADR-001: Adopción del Estilo Arquitectónico Monolítico Modular](#adr-001-adopción-del-estilo-arquitectónico-monolítico-modular)
 - [ADR-002: Dualidad de Comunicación: Server Actions para Web y Route Handlers (REST API) para App Móvil](#adr-002-dualidad-de-comunicación-server-actions-para-web-y-route-handlers-rest-api-para-app-móvil)
 - [ADR-003: Persistencia de Datos con Neon Serverless PostgreSQL y Prisma ORM](#adr-003-persistencia-de-datos-con-neon-serverless-postgresql-y-prisma-orm)
-- [ADR-004: Autenticación y Autorización basada en Roles (RBAC) con Neon Auth](#adr-004-autenticación-y-autorización-basada-en-roles-rbac-con-neon-auth)
+- [ADR-004: Autenticación y Autorización basada en Roles (RBAC) con Clerk](#adr-004-autenticación-y-autorización-basada-en-roles-rbac-con-clerk)
 - [ADR-005: Selección de Librería UI (shadcn/ui + Radix UI) y Visualización para el Dominio de Aerolíneas](#adr-005-selección-de-librería-ui-shadcnui--radix-ui-y-visualización-para-el-dominio-de-aerolíneas)
 - [ADR-006: Estrategia de Soft Delete (deleted: boolean) y Control de Concurrencia en Reservas](#adr-006-estrategia-de-soft-delete-deleted-boolean-y-control-de-concurrencia-en-reservas)
 
@@ -55,16 +55,22 @@ Este documento registra formalmente las decisiones clave de arquitectura y dise�
 
 ---
 
-### ADR-004: Autenticación y Autorización basada en Roles (RBAC) con Neon Auth
+### ADR-004: Autenticación y Autorización basada en Roles (RBAC) con Clerk
 
 - **Contexto:**
-  El sistema exige interfaces separadas y específicas para 3 roles: Pasajeros, Empleados de mostrador y Administradores. Además, los pasajeros deben poder comprar tanto como usuarios registrados como en modalidad "invitado" (indicando su email de contacto).
+  El sistema exige interfaces separadas y específicas para 3 roles: Pasajeros, Empleados de mostrador y Administradores. Además, los pasajeros deben poder comprar tanto como usuarios registrados como en modalidad "invitado" (indicando su email de contacto). El ADR original proponía **Neon Auth**; durante la implementación se determinó que se requiere un proveedor de identidad con control fino de claims en el session token, provisionamiento manual de cuentas de staff y componentes de UI de sign-in/sign-up listos para usar, por lo que se sustituye por **Clerk**.
 - **Decisión:**
-  Utilizar **Neon Auth** para la gestión centralizada de identidades y sesiones, junto a una tabla relacional de roles en el esquema (`ROL` y `USUARIO`).
-  - En la aplicación Web: Manejo de sesiones mediante cookies HTTP-only seguras validadas en el Middleware de Next.js.
-  - En la API Móvil: Intercambio de credenciales por tokens JWT Bearer válidos por sesión.
+  Utilizar **Clerk** (`@clerk/nextjs`) para la gestión centralizada de identidades, sesiones y credenciales, junto a la tabla relacional de roles del esquema (`ROL` y `USUARIO`).
+  1. **Rol viajando en el JWT:** el rol se expone en el session token de Clerk mediante el claim **`role`**, configurado en *Sessions → Customize session token → Claims editor* como `{ "role": "{{user.public_metadata.role}}" }`. La fuente de verdad es `user.public_metadata.role` (`"pasajero" | "mostrador" | "admin"`), que sólo es escribible desde el Backend API/Dashboard, por lo que un cliente no puede autoasignarse un rol. Si el claim no existe (usuarios creados por sign-up público), el rol efectivo es **`pasajero`** (`modules/usuarios/roles.ts`).
+  2. **Provisionamiento de cuentas de staff:** la instancia permanece en modo *Open* para que los pasajeros se registren libremente en `/registro`, única superficie de sign-up de la aplicación. Las cuentas `admin` y `mostrador` se crean manualmente en el Clerk Dashboard (Create user / Invitation) seteando `publicMetadata.role`; sus páginas de login (`/admin/login`, `/mostrador/login`) renderizan `<SignIn withSignUp={false}>`.
+  3. **Sincronización con la base de datos:** *lazy upsert* sin webhooks. En la primera request autenticada que renderiza un área protegida, `modules/usuarios/service.ts` busca `usuario` por `clerkId` y, si no existe, asegura la fila `rol` (get-or-create) y crea el registro con los datos de `currentUser()`.
+  4. **Protección en dos capas:**
+     - **Borde de red:** `proxy.ts` (convención renombrada desde `middleware.ts` en Next.js 16) con `clerkMiddleware` + `createRouteMatcher`, redirigiendo según sesión y rol.
+     - **Servidor:** `requireRole()` de `modules/usuarios/auth.ts` en los layouts de las áreas protegidas y en las Server Actions que requieran un rol, más la verificación de autorización dentro de cada Server Action.
+  5. **API Móvil:** se mantiene la dualidad del ADR-002; la verificación de tokens Bearer se hará con `clerkClient.verifyToken` en los route handlers de `/api/v1` (fuera del alcance de esta decisión).
 - **Consecuencias:**
-  - *Positivas:* Control de acceso robusto (RBAC). Las rutas administrativas (`/admin/*`) y de mostrador (`/mostrador/*`) quedan estrictamente protegidas a nivel middleware y server-side. Se permite la compra a invitados almacenando `usuario_id = null` en `TRANSACCION_COMPRA`.
+  - *Positivas:* Control de acceso robusto (RBAC) con verificación criptográfica de sesión y sin gestión propia de contraseñas ni cookies. Las rutas `/admin/*` y `/mostrador/*` quedan protegidas en el borde y en el servidor (defensa en profundidad). El claim `role` da un rol autoritativo y auditable por request sin consultas a la base de datos en el proxy. Se permite la compra a invitados almacenando `usuario_id = null` en `TRANSACCION_COMPRA`.
+  - *Negativas / mitigación:* dependencia de un proveedor externo (mitigado: la tabla `usuario` conserva el rol local como dato de negocio y la lógica de dominio no depende de Clerk más allá de `clerkId`); configuración manual del claim y de las cuentas de staff en el Dashboard (mitigado con checklist en `auth-plan.md`); ausencia de sincronización por webhook, por lo que cambios de metadata tardan en reflejarse hasta la siguiente sesión (mitigado con *lazy upsert* y con el claim del token).
 
 ---
 
