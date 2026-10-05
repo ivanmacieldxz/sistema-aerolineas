@@ -1,9 +1,4 @@
-import dotenv from "dotenv";
-import { defineConfig, env } from "prisma/config";
-
-dotenv.config({ path: ".env.local" });
-
-export default defineConfig({
+const prismaConfig = {
   schema: "prisma/schema.prisma",
   migrations: {
     path: "prisma/migrations",
