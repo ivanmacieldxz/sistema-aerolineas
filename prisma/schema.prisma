@@ -1,0 +1,145 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Rol {
+  id       Int       @id @default(autoincrement())
+  nombre   String    @unique
+  deleted  Boolean   @default(false)
+  usuarios Usuario[]
+
+  @@map("rol")
+}
+
+model Usuario {
+  id            BigInt              @id @default(autoincrement())
+  roleId        Int                 @map("role_id")
+  rol           Rol                 @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  name          String
+  apellido      String
+  email         String
+  clerkId       String?             @unique @map("clerk_id")
+  deleted       Boolean             @default(false)
+  transacciones TransaccionCompra[]
+
+  @@map("usuario")
+}
+
+model Aeropuerto {
+  iataCode      String  @id @map("iata_code") @db.Char(3)
+  nombre        String
+  ciudad        String
+  provincia     String
+  vuelosOrigen  Vuelo[] @relation("VueloOrigen")
+  vuelosDestino Vuelo[] @relation("VueloDestino")
+
+  @@map("aeropuerto")
+}
+
+model Vuelo {
+  id               BigInt            @id @default(autoincrement())
+  numeroVuelo      String            @unique @map("numero_vuelo")
+  origenIata       String            @map("origen_iata") @db.Char(3)
+  destinoIata      String            @map("destino_iata") @db.Char(3)
+  origen           Aeropuerto        @relation("VueloOrigen", fields: [origenIata], references: [iataCode], onDelete: Restrict)
+  destino          Aeropuerto        @relation("VueloDestino", fields: [destinoIata], references: [iataCode], onDelete: Restrict)
+  horaSalida       DateTime          @map("hora_salida") @db.Time
+  horaLlegada      DateTime          @map("hora_llegada") @db.Time
+  vigenciaDesde    DateTime          @map("vigencia_desde") @db.Date
+  vigenciaHasta    DateTime          @map("vigencia_hasta") @db.Date
+  capacidadEconomy Int               @map("capacidad_economy")
+  capacidadPrimera Int               @map("capacidad_primera")
+  precioEconomy    Decimal           @map("precio_economy") @db.Decimal(12, 2)
+  precioPrimera    Decimal           @map("precio_primera") @db.Decimal(12, 2)
+  activo           Boolean           @default(true)
+  deleted          Boolean           @default(false)
+  diasSemana       VueloDiaSemana[]
+  instancias       InstanciaVuelo[]
+
+  @@map("vuelo")
+}
+
+model VueloDiaSemana {
+  vueloId   BigInt @map("vuelo_id")
+  diaSemana Int    @map("dia_semana") @db.SmallInt
+  vuelo     Vuelo  @relation(fields: [vueloId], references: [id], onDelete: Cascade)
+
+  @@id([vueloId, diaSemana])
+  @@map("vuelo_dia_semana")
+}
+
+model InstanciaVuelo {
+  id          BigInt   @id @default(autoincrement())
+  vueloId     BigInt   @map("vuelo_id")
+  vuelo       Vuelo    @relation(fields: [vueloId], references: [id], onDelete: Restrict)
+  fechaSalida DateTime @map("fecha_salida") @db.Date
+  estado      String   @default("PROGRAMADO")
+  deleted     Boolean  @default(false)
+  pasajes     Pasaje[]
+
+  @@unique([vueloId, fechaSalida])
+  @@map("instancia_vuelo")
+}
+
+model TransaccionCompra {
+  id            BigInt    @id @default(autoincrement())
+  usuarioId     BigInt?   @map("usuario_id")
+  usuario       Usuario?  @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+  emailContacto String    @map("email_contacto")
+  fechaCreacion DateTime  @default(now()) @map("fecha_creacion")
+  estado        String    @default("PENDIENTE")
+  total         Decimal   @default(0.00) @db.Decimal(12, 2)
+  deleted       Boolean   @default(false)
+  pago          Pago?
+  factura       Factura?
+  pasajes       Pasaje[]
+
+  @@map("transaccion_compra")
+}
+
+model Pago {
+  id                     BigInt            @id @default(autoincrement())
+  transaccionId          BigInt            @unique @map("transaccion_id")
+  transaccion            TransaccionCompra @relation(fields: [transaccionId], references: [id], onDelete: Restrict)
+  metodoPago             String            @map("metodo_pago")
+  idTransaccionPasarela  String            @map("id_transaccion_pasarela")
+  monto                  Decimal           @db.Decimal(12, 2)
+  fechaPago              DateTime          @default(now()) @map("fecha_pago")
+  estado                 String            @default("PENDIENTE")
+
+  @@map("pago")
+}
+
+model Factura {
+  id                   BigInt            @id @default(autoincrement())
+  transaccionId        BigInt            @unique @map("transaccion_id")
+  transaccion          TransaccionCompra @relation(fields: [transaccionId], references: [id], onDelete: Restrict)
+  numeroFactura        String            @unique @map("numero_factura")
+  tipoFactura          String            @map("tipo_factura")
+  nombreRazonSocial    String            @map("nombre_razon_social")
+  identificacionFiscal String            @map("identificacion_fiscal")
+  total                Decimal           @db.Decimal(12, 2)
+  fechaEmision         DateTime          @default(now()) @map("fecha_emision")
+
+  @@map("factura")
+}
+
+model Pasaje {
+  codigo            BigInt         @id @default(autoincrement())
+  transaccionId     BigInt         @map("transaccion_id")
+  transaccion       TransaccionCompra @relation(fields: [transaccionId], references: [id], onDelete: Restrict)
+  instanciaVueloId  BigInt         @map("instancia_vuelo_id")
+  instanciaVuelo    InstanciaVuelo @relation(fields: [instanciaVueloId], references: [id], onDelete: Restrict)
+  clase             String
+  pasajeroNombre    String         @map("pasajero_nombre")
+  pasajeroApellido  String         @map("pasajero_apellido")
+  pasajeroDocumento String         @map("pasajero_documento")
+  numeroAsiento     String?        @map("numero_asiento")
+  estado            String         @default("EMITIDO")
+
+  @@map("pasaje")
+}
