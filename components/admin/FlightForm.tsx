@@ -28,8 +28,8 @@ export function FlightForm() {
     watch,
     setValue,
     formState: { errors },
-  } = useForm<FlightFormInput>({
-    resolver: zodResolver(flightSchema) as any,
+  } = useForm<FlightFormInput, unknown, FlightFormValues>({
+    resolver: zodResolver(flightSchema),
     defaultValues: {
       diasSemana: [],
     },
@@ -53,13 +53,12 @@ export function FlightForm() {
     }
   }, [isEconomyEnabled, setValue]);
 
-  const onSubmit = async (data: any) => {
+  const onSubmit = async (data: FlightFormValues) => {
     setIsSubmitting(true);
     setServerError(null);
     setServerSuccess(null);
 
-    const validData = data as FlightFormValues;
-    const result = await createFlight(validData);
+    const result = await createFlight(data);
 
     if (result.success) {
       setServerSuccess("¡Vuelo creado exitosamente!");
