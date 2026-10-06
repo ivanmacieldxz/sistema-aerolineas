@@ -8,72 +8,89 @@ export default function VuelosDashboardPage() {
   const [isCrearOpen, setIsCrearOpen] = useState(false);
 
   return (
-    <div className="max-w-6xl mx-auto p-6 text-white">
-      <h1 className="text-3xl font-bold mb-2">Gestión de Vuelos</h1>
-      <p className="text-gray-400 mb-8">
+    <div className="mx-auto max-w-6xl p-6">
+      <p className="text-xs font-semibold tracking-[0.12em] text-muted">
+        ADMINISTRACIÓN
+      </p>
+      <h1 className="mt-1 text-3xl font-semibold">Gestión de Vuelos</h1>
+      <p className="mt-2 mb-8 text-muted">
         Administra las rutas, horarios y tarifas de la aerolínea.
       </p>
 
       <div className="space-y-4">
         {/* Accordion: Crear Vuelo */}
-        <div className={`bg-neutral-900 border ${isCrearOpen ? 'border-indigo-500 shadow-lg shadow-indigo-500/10' : 'border-neutral-800'} rounded-xl overflow-hidden transition-all duration-300`}>
+        <div
+          className={`overflow-hidden rounded-lg border bg-surface transition-all duration-300 ${
+            isCrearOpen
+              ? "border-accent shadow-[0_16px_45px_-28px_rgba(16,46,39,0.42)]"
+              : "border-line"
+          }`}
+        >
           <button
             onClick={() => setIsCrearOpen(!isCrearOpen)}
-            className="w-full flex items-center justify-between p-6 text-left hover:bg-neutral-800/50 transition-colors"
+            className="flex w-full items-center justify-between p-6 text-left transition-colors hover:bg-soft/60"
           >
             <div className="flex items-center gap-4">
-              <div className="p-3 bg-indigo-500/10 text-indigo-400 rounded-lg">
+              <div className="rounded-lg bg-soft p-3 text-accent">
                 <PlusCircle size={24} />
               </div>
               <div>
-                <h2 className="text-xl font-semibold text-white">Crear Vuelo</h2>
-                <p className="text-gray-400 text-sm mt-1">Da de alta un nuevo vuelo en el sistema.</p>
+                <h2 className="text-xl font-semibold">Crear Vuelo</h2>
+                <p className="mt-1 text-sm text-muted">
+                  Da de alta un nuevo vuelo en el sistema.
+                </p>
               </div>
             </div>
-            <ChevronDown 
-              className={`text-gray-400 transition-transform duration-300 w-6 h-6 ${isCrearOpen ? 'rotate-180 text-indigo-400' : ''}`} 
+            <ChevronDown
+              className={`h-6 w-6 transition-transform duration-300 ${
+                isCrearOpen ? "rotate-180 text-accent" : "text-muted"
+              }`}
             />
           </button>
-          
-          <div 
-            className={`transition-all duration-500 ease-in-out overflow-hidden ${
-              isCrearOpen ? 'max-h-[3000px] opacity-100' : 'max-h-0 opacity-0'
+
+          <div
+            className={`overflow-hidden transition-all duration-500 ease-in-out ${
+              isCrearOpen ? "max-h-[3000px] opacity-100" : "max-h-0 opacity-0"
             }`}
           >
-            <div className="p-6 pt-0 border-t border-neutral-800">
+            <div className="border-t border-line p-6 pt-6">
               <FlightForm />
             </div>
           </div>
         </div>
 
         {/* Accordion: Modificar Vuelo (Deshabilitado) */}
-        <div className="bg-neutral-900/50 border border-neutral-800 rounded-xl overflow-hidden opacity-60 cursor-not-allowed relative">
-          <div className="absolute top-6 right-6 bg-neutral-800 text-gray-300 text-xs font-bold px-3 py-1 rounded-full border border-neutral-700">
+        <div className="relative cursor-not-allowed overflow-hidden rounded-lg border border-line bg-surface/60 p-6 opacity-60">
+          <div className="absolute right-6 top-6 rounded-full border border-line-strong bg-soft px-3 py-1 text-xs font-bold text-muted">
             En Desarrollo
           </div>
-          <div className="flex items-center gap-4 p-6">
-            <div className="p-3 bg-neutral-800 text-gray-500 rounded-lg">
+          <div className="flex items-center gap-4">
+            <div className="rounded-lg bg-soft p-3 text-muted">
               <Edit size={24} />
             </div>
             <div>
-              <h2 className="text-xl font-semibold text-gray-300">Modificar Vuelo</h2>
-              <p className="text-gray-500 text-sm mt-1">Edita la información y tarifas de los vuelos existentes.</p>
+              <h2 className="text-xl font-semibold">Modificar Vuelo</h2>
+              <p className="mt-1 text-sm text-muted">
+                Edita la información y tarifas de los vuelos existentes.
+              </p>
             </div>
           </div>
         </div>
 
         {/* Accordion: Eliminar Vuelo (Deshabilitado) */}
-        <div className="bg-neutral-900/50 border border-neutral-800 rounded-xl overflow-hidden opacity-60 cursor-not-allowed relative">
-          <div className="absolute top-6 right-6 bg-neutral-800 text-gray-300 text-xs font-bold px-3 py-1 rounded-full border border-neutral-700">
+        <div className="relative cursor-not-allowed overflow-hidden rounded-lg border border-line bg-surface/60 p-6 opacity-60">
+          <div className="absolute right-6 top-6 rounded-full border border-line-strong bg-soft px-3 py-1 text-xs font-bold text-muted">
             En Desarrollo
           </div>
-          <div className="flex items-center gap-4 p-6">
-            <div className="p-3 bg-neutral-800 text-gray-500 rounded-lg">
+          <div className="flex items-center gap-4">
+            <div className="rounded-lg bg-soft p-3 text-muted">
               <Trash2 size={24} />
             </div>
             <div>
-              <h2 className="text-xl font-semibold text-gray-300">Eliminar Vuelo</h2>
-              <p className="text-gray-500 text-sm mt-1">Da de baja vuelos que ya no operan.</p>
+              <h2 className="text-xl font-semibold">Eliminar Vuelo</h2>
+              <p className="mt-1 text-sm text-muted">
+                Da de baja vuelos que ya no operan.
+              </p>
             </div>
           </div>
         </div>

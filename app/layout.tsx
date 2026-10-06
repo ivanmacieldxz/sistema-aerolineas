@@ -26,7 +26,17 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <ClerkProvider>
+        <ClerkProvider
+          appearance={{
+            variables: {
+              colorPrimary: "#27715e",
+              colorForeground: "#19332d",
+              colorMutedForeground: "#64766f",
+              colorBorder: "#dce2da",
+              borderRadius: "0.375rem",
+            },
+          }}
+        >
           <Topbar />
           <div className="flex flex-1 flex-col">{children}</div>
         </ClerkProvider>

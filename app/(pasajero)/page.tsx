@@ -1,69 +1,121 @@
-import Image from "next/image";
+import Link from "next/link";
+import { ArrowRight, Luggage, Search, Ticket } from "lucide-react";
+
+const features = [
+  {
+    icon: Search,
+    titulo: "Encontrá tu vuelo",
+    detalle:
+      "Buscá por origen, destino y fecha entre vuelos nacionales e internacionales, con precios por clase.",
+  },
+  {
+    icon: Ticket,
+    titulo: "Hasta 9 pasajes",
+    detalle:
+      "Comprá en una sola transacción para todo tu grupo, con el total y el pago confirmados al instante.",
+  },
+  {
+    icon: Luggage,
+    titulo: "Pase de abordar",
+    detalle:
+      "Hacé check-in desde la web o en el mostrador del aeropuerto y consultá tu pase de abordar.",
+  },
+];
 
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+    <main className="min-h-[calc(100vh-72px)] bg-page font-sans text-ink">
+      <section className="relative isolate overflow-hidden bg-brand-deep text-white">
+        <div
+          className="absolute inset-0 -z-20 bg-cover bg-[center_42%]"
+          style={{
+            backgroundImage:
+              "url('https://images.unsplash.com/photo-1436491865332-7a61a109cc05?auto=format&fit=crop&w=2200&q=85')",
+          }}
+          role="img"
+          aria-label="Vista de un avión en vuelo"
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+        <div className="absolute inset-0 -z-10 bg-gradient-to-r from-[#102e27]/95 via-[#102e27]/75 to-[#102e27]/25" />
+        <div className="mx-auto max-w-7xl px-5 pb-24 pt-12 sm:px-8 sm:pb-28 sm:pt-16">
+          <p className="mb-4 text-xs font-semibold tracking-[0.16em] text-[#b7d6c7]">
+            VIAJÁ A TU MANERA
           </p>
+          <h1 className="max-w-xl text-4xl font-semibold leading-tight sm:text-5xl">
+            El próximo destino está más cerca.
+          </h1>
+          <p className="mt-4 max-w-lg text-base leading-7 text-white/80">
+            Buscá tu vuelo, comprá pasajes para todo el grupo y guardá tu pase
+            de abordar en un solo lugar.
+          </p>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Link
+              href="/vuelos"
+              className="inline-flex h-12 items-center justify-center gap-2 rounded-md bg-action px-6 font-semibold text-white transition-colors hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-action"
+            >
+              <Search size={18} aria-hidden="true" />
+              Buscar vuelos
+            </Link>
+            <Link
+              href="/registro"
+              className="inline-flex h-12 items-center justify-center gap-2 rounded-md border border-white/30 px-6 font-semibold text-white transition-colors hover:bg-white/10"
+            >
+              Crear cuenta
+              <ArrowRight size={18} aria-hidden="true" />
+            </Link>
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-5 pb-14 pt-12 sm:px-8 sm:pb-16 sm:pt-14">
+        <p className="text-xs font-semibold tracking-[0.12em] text-muted">
+          TODO PARA TU VIAJE
+        </p>
+        <h2 className="mt-1 text-2xl font-semibold capitalize">
+          Comprá y viajá sin vueltas
+        </h2>
+
+        <div className="mt-6 grid gap-4 md:grid-cols-3">
+          {features.map((feature) => (
+            <article
+              key={feature.titulo}
+              className="rounded-lg border border-line bg-surface p-5"
+            >
+              <span className="grid size-11 place-items-center rounded-full bg-soft text-accent">
+                <feature.icon size={20} aria-hidden="true" />
+              </span>
+              <h3 className="mt-4 text-base font-semibold">{feature.titulo}</h3>
+              <p className="mt-1 text-sm leading-6 text-muted">
+                {feature.detalle}
+              </p>
+            </article>
+          ))}
         </div>
-      </main>
-    </div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-5 pb-16 sm:px-8">
+        <div className="flex flex-col gap-6 rounded-lg border border-line bg-surface p-6 sm:flex-row sm:items-center sm:justify-between sm:p-8">
+          <div>
+            <h2 className="text-xl font-semibold">¿Ya tenés cuenta?</h2>
+            <p className="mt-1 text-sm leading-6 text-muted">
+              Iniciá sesión para consultar tus compras y tus pases de abordar.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <Link
+              href="/login"
+              className="inline-flex h-12 items-center justify-center rounded-md bg-brand px-6 font-semibold text-white transition-colors hover:bg-accent"
+            >
+              Iniciar sesión
+            </Link>
+            <Link
+              href="/registro"
+              className="inline-flex h-12 items-center justify-center rounded-md border border-line-strong px-6 font-semibold text-ink transition-colors hover:bg-soft"
+            >
+              Crear cuenta
+            </Link>
+          </div>
+        </div>
+      </section>
+    </main>
   );
 }
