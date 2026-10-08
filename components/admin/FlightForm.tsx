@@ -70,28 +70,30 @@ export function FlightForm() {
     setIsSubmitting(false);
   };
 
-  const inputClass = "mt-1 block w-full rounded-md shadow-sm sm:text-sm p-2 border focus:ring-indigo-500 focus:border-indigo-500 bg-neutral-800 border-neutral-700 text-white placeholder-gray-500";
-  const disabledInputClass = "mt-1 block w-full rounded-md shadow-sm sm:text-sm p-2 border focus:ring-indigo-500 focus:border-indigo-500 bg-neutral-900 border-neutral-800 text-gray-500 cursor-not-allowed";
+  const inputClass =
+    "mt-1 block h-12 w-full rounded-md border border-line-strong bg-surface px-3 text-sm text-ink outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20";
+  const disabledInputClass =
+    "mt-1 block h-12 w-full cursor-not-allowed rounded-md border border-line bg-soft px-3 text-sm text-muted outline-none";
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 mt-4">
       {/* Número de Vuelo */}
       <div>
-        <label className="block text-sm font-medium text-gray-200">Número de Vuelo</label>
+        <label className="block text-sm font-medium text-ink">Número de Vuelo</label>
         <input
           {...register("numeroVuelo")}
           className={inputClass}
           placeholder="Ej: AR1023"
         />
         <div className="h-8 mt-1">
-          <p className="text-red-400 text-xs leading-tight whitespace-pre-line">{errors.numeroVuelo?.message?.toString()}</p>
+          <p className="text-danger text-xs leading-tight whitespace-pre-line">{errors.numeroVuelo?.message?.toString()}</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Origen */}
         <div>
-          <label className="block text-sm font-medium text-gray-200">Origen (IATA)</label>
+          <label className="block text-sm font-medium text-ink">Origen (IATA)</label>
           <input
             {...register("origenIata")}
             className={inputClass}
@@ -99,13 +101,13 @@ export function FlightForm() {
             maxLength={3}
           />
           <div className="h-8 mt-1">
-            <p className="text-red-400 text-xs leading-tight whitespace-pre-line">{errors.origenIata?.message?.toString()}</p>
+            <p className="text-danger text-xs leading-tight whitespace-pre-line">{errors.origenIata?.message?.toString()}</p>
           </div>
         </div>
 
         {/* Destino */}
         <div>
-          <label className="block text-sm font-medium text-gray-200">Destino (IATA)</label>
+          <label className="block text-sm font-medium text-ink">Destino (IATA)</label>
           <input
             {...register("destinoIata")}
             className={inputClass}
@@ -113,7 +115,7 @@ export function FlightForm() {
             maxLength={3}
           />
           <div className="h-8 mt-1">
-            <p className="text-red-400 text-xs leading-tight whitespace-pre-line">{errors.destinoIata?.message?.toString()}</p>
+            <p className="text-danger text-xs leading-tight whitespace-pre-line">{errors.destinoIata?.message?.toString()}</p>
           </div>
         </div>
       </div>
@@ -121,27 +123,27 @@ export function FlightForm() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Hora Salida */}
         <div>
-          <label className="block text-sm font-medium text-gray-200">Hora de Salida</label>
+          <label className="block text-sm font-medium text-ink">Hora de Salida</label>
           <input
             type="time"
             {...register("horaSalida")}
             className={inputClass}
           />
           <div className="h-8 mt-1">
-            <p className="text-red-400 text-xs leading-tight whitespace-pre-line">{errors.horaSalida?.message?.toString()}</p>
+            <p className="text-danger text-xs leading-tight whitespace-pre-line">{errors.horaSalida?.message?.toString()}</p>
           </div>
         </div>
 
         {/* Hora Llegada */}
         <div>
-          <label className="block text-sm font-medium text-gray-200">Hora de Llegada</label>
+          <label className="block text-sm font-medium text-ink">Hora de Llegada</label>
           <input
             type="time"
             {...register("horaLlegada")}
             className={inputClass}
           />
           <div className="h-8 mt-1">
-            <p className="text-red-400 text-xs leading-tight whitespace-pre-line">{errors.horaLlegada?.message?.toString()}</p>
+            <p className="text-danger text-xs leading-tight whitespace-pre-line">{errors.horaLlegada?.message?.toString()}</p>
           </div>
         </div>
       </div>
@@ -149,27 +151,27 @@ export function FlightForm() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Vigencia Desde */}
         <div>
-          <label className="block text-sm font-medium text-gray-200">Vigencia Desde</label>
+          <label className="block text-sm font-medium text-ink">Vigencia Desde</label>
           <input
             type="date"
             {...register("vigenciaDesde")}
             className={inputClass}
           />
           <div className="h-8 mt-1">
-            <p className="text-red-400 text-xs leading-tight whitespace-pre-line">{errors.vigenciaDesde?.message?.toString()}</p>
+            <p className="text-danger text-xs leading-tight whitespace-pre-line">{errors.vigenciaDesde?.message?.toString()}</p>
           </div>
         </div>
 
         {/* Vigencia Hasta */}
         <div>
-          <label className="block text-sm font-medium text-gray-200">Vigencia Hasta</label>
+          <label className="block text-sm font-medium text-ink">Vigencia Hasta</label>
           <input
             type="date"
             {...register("vigenciaHasta")}
             className={inputClass}
           />
           <div className="h-8 mt-1">
-            <p className="text-red-400 text-xs leading-tight whitespace-pre-line">{errors.vigenciaHasta?.message?.toString()}</p>
+            <p className="text-danger text-xs leading-tight whitespace-pre-line">{errors.vigenciaHasta?.message?.toString()}</p>
           </div>
         </div>
       </div>
@@ -177,7 +179,7 @@ export function FlightForm() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Capacidad Economy */}
         <div>
-          <label className="block text-sm font-medium text-gray-200">Capacidad Economy</label>
+          <label className="block text-sm font-medium text-ink">Capacidad Economy</label>
           <input
             type="number"
             min="0"
@@ -185,13 +187,13 @@ export function FlightForm() {
             className={inputClass}
           />
           <div className="h-8 mt-1">
-            <p className="text-red-400 text-xs leading-tight whitespace-pre-line">{errors.capacidadEconomy?.message?.toString()}</p>
+            <p className="text-danger text-xs leading-tight whitespace-pre-line">{errors.capacidadEconomy?.message?.toString()}</p>
           </div>
         </div>
 
         {/* Precio Economy */}
         <div>
-          <label className={`block text-sm font-medium ${!isEconomyEnabled ? 'text-gray-500' : 'text-gray-200'}`}>Precio Economy ($)</label>
+          <label className={`block text-sm font-medium ${!isEconomyEnabled ? 'text-muted' : 'text-ink'}`}>Precio Economy ($)</label>
           <input
             type="number"
             step="0.01"
@@ -201,7 +203,7 @@ export function FlightForm() {
             className={!isEconomyEnabled ? disabledInputClass : inputClass}
           />
           <div className="h-8 mt-1">
-            <p className="text-red-400 text-xs leading-tight whitespace-pre-line">{errors.precioEconomy?.message?.toString()}</p>
+            <p className="text-danger text-xs leading-tight whitespace-pre-line">{errors.precioEconomy?.message?.toString()}</p>
           </div>
         </div>
       </div>
@@ -209,7 +211,7 @@ export function FlightForm() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Capacidad Primera */}
         <div>
-          <label className="block text-sm font-medium text-gray-200">Capacidad Primera Clase</label>
+          <label className="block text-sm font-medium text-ink">Capacidad Primera Clase</label>
           <input
             type="number"
             min="0"
@@ -217,13 +219,13 @@ export function FlightForm() {
             className={inputClass}
           />
           <div className="h-8 mt-1">
-            <p className="text-red-400 text-xs leading-tight whitespace-pre-line">{errors.capacidadPrimera?.message?.toString()}</p>
+            <p className="text-danger text-xs leading-tight whitespace-pre-line">{errors.capacidadPrimera?.message?.toString()}</p>
           </div>
         </div>
 
         {/* Precio Primera */}
         <div>
-          <label className={`block text-sm font-medium ${!isPrimeraEnabled ? 'text-gray-500' : 'text-gray-200'}`}>Precio Primera Clase ($)</label>
+          <label className={`block text-sm font-medium ${!isPrimeraEnabled ? 'text-muted' : 'text-ink'}`}>Precio Primera Clase ($)</label>
           <input
             type="number"
             step="0.01"
@@ -233,14 +235,14 @@ export function FlightForm() {
             className={!isPrimeraEnabled ? disabledInputClass : inputClass}
           />
           <div className="h-8 mt-1">
-            <p className="text-red-400 text-xs leading-tight whitespace-pre-line">{errors.precioPrimera?.message?.toString()}</p>
+            <p className="text-danger text-xs leading-tight whitespace-pre-line">{errors.precioPrimera?.message?.toString()}</p>
           </div>
         </div>
       </div>
 
       {/* Días de la semana */}
       <div>
-        <label className="block text-sm font-medium text-gray-200 mb-2">Días de Operación</label>
+        <label className="block text-sm font-medium text-ink mb-2">Días de Operación</label>
         <div className="flex flex-wrap gap-4">
           {diasSemanaMap.map((dia) => (
             <label key={dia.id} className="flex items-center space-x-2 cursor-pointer">
@@ -248,38 +250,38 @@ export function FlightForm() {
                 type="checkbox"
                 value={dia.id}
                 {...register("diasSemana")}
-                className="rounded border-neutral-700 bg-neutral-800 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-neutral-900"
+                className="h-4 w-4 rounded border-line-strong bg-surface text-accent focus:ring-accent"
               />
-              <span className="text-sm text-gray-300 hover:text-white transition-colors">{dia.name}</span>
+              <span className="text-sm text-ink transition-colors hover:text-accent">{dia.name}</span>
             </label>
           ))}
         </div>
         <div className="h-8 mt-1">
-          <p className="text-red-400 text-xs leading-tight whitespace-pre-line">{errors.diasSemana?.message?.toString()}</p>
+          <p className="text-danger text-xs leading-tight whitespace-pre-line">{errors.diasSemana?.message?.toString()}</p>
         </div>
       </div>
 
       {/* Mensajes de feedback (Exito o Error) */}
       <div className="h-20">
         {serverError && (
-          <div className="mt-6 p-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg">
+          <div className="mt-6 rounded-lg border border-[#e9c7bc] bg-[#fff4ef] p-4 text-sm text-danger">
             {serverError}
           </div>
         )}
 
         {serverSuccess && (
-          <div className="mt-6 p-4 bg-green-500/10 border border-green-500/20 text-green-400 rounded-lg">
+          <div className="mt-6 rounded-lg border border-[#bcd8cb] bg-[#eaf4ee] p-4 text-sm text-accent">
             {serverSuccess}
           </div>
         )}
       </div>
 
       {/* Submit */}
-      <div className="flex justify-end pt-6 border-t border-neutral-800">
+      <div className="flex justify-end border-t border-line pt-6">
         <button
           type="submit"
           disabled={isSubmitting}
-          className="inline-flex justify-center rounded-lg border border-transparent bg-indigo-600 px-6 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-neutral-900 disabled:opacity-50 transition-colors"
+          className="inline-flex h-12 items-center justify-center rounded-md bg-action px-6 text-sm font-semibold text-white transition-colors hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-action disabled:opacity-50"
         >
           {isSubmitting ? "Creando..." : "Crear Vuelo"}
         </button>

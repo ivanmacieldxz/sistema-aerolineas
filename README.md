@@ -36,9 +36,10 @@ El proyecto utiliza un stack moderno optimizado para entornos serverless, tipado
 - **Base de Datos:** [Neon](https://neon.tech/) Serverless PostgreSQL.
   - Escalabilidad elástica automática y soporte de *database branching* para desarrollo y testing.
   - Conexión optimizada mediante pool serverless (`@neondatabase/serverless`).
-- **Autenticación y Roles:** **Neon Auth** (`@neondatabase/auth` / `@neon/config`).
-  - Control de Acceso Basado en Roles (RBAC): `ADMINISTRADOR`, `EMPLEADO_MOSTRADOR`, `PASAJERO`.
-  - Soporte de sesiones basadas en cookies HTTP-only para la web y tokens Bearer JWT para la app móvil.
+- **Autenticación y Roles:** **Clerk** (`@clerk/nextjs`).
+  - Control de Acceso Basado en Roles (RBAC): `ADMINISTRADOR`, `EMPLEADO_MOSTRADOR`, `PASAJERO`, con el rol viajando en el claim `role` del session token.
+  - Protección en dos capas: `proxy.ts` (borde de red) + guards server-side (`requireRole`).
+  - Los pasajeros se registran en `/registro`; las cuentas de staff se crean en el Clerk Dashboard.
 - **ORM / Capa de Persistencia:** [Prisma ORM](https://www.prisma.io/) (v7.x).
   - Tipado de datos de extremo a extremo generado en TypeScript.
   - Mapeo relacional de 10 entidades con soporte integral para el patrón **Soft Delete** (`deleted: boolean`).
@@ -122,19 +123,23 @@ Cada commit debe seguir el estándar:
    ```bash
    cp .env.example .env.local
    ```
-   Edita `.env.local` con las credenciales de tu proyecto Neon:
+   Edita `.env.local` con las credenciales de tu proyecto Neon y de Clerk:
    ```env
    # Cadena de conexión provista por Neon Console
    DATABASE_URL="postgresql://usuario:password@ep-sample-123456.us-east-2.aws.neon.tech/neondb?sslmode=require"
 
-   # Claves para autenticación (Neon Auth / Better Auth)
-   NEON_AUTH_SECRET="tu-clave-secreta-de-al-menos-32-caracteres"
-   BETTER_AUTH_SECRET="tu-clave-secreta-de-al-menos-32-caracteres"
-   BETTER_AUTH_URL="http://localhost:3000"
+   # Clerk (autenticación) - Clerk Dashboard -> API Keys
+   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_test_..."
+   CLERK_SECRET_KEY="sk_test_..."
+   NEXT_PUBLIC_CLERK_SIGN_IN_URL="/login"
+   NEXT_PUBLIC_CLERK_SIGN_UP_URL="/registro"
 
    # URL base de la app
    NEXT_PUBLIC_APP_URL="http://localhost:3000"
    ```
+   > **Nota:** además de las claves, hay que agregar el claim `role` al session
+   > token en *Clerk Dashboard → Sessions → Customize session token* y crear las
+   > cuentas de staff con `publicMetadata.role` (`admin` / `mostrador`).
 4. **Añadir dependencias dependendencias dotenv**
    Añade dependencias necesarias:
    ```bash
