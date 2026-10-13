@@ -1,9 +1,13 @@
 import { requireRole } from "@/modules/usuarios/auth";
+import { getCurrentUsuario } from "@/modules/usuarios/service";
 
 export default async function AdminPanelLayout({
   children,
-}: LayoutProps<"/admin">) {
+}: {
+  children: React.ReactNode;
+}) {
   await requireRole("admin");
+  await getCurrentUsuario();
 
   return (
     <div className="flex flex-1 flex-col bg-page font-sans text-ink">
