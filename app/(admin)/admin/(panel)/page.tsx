@@ -1,3 +1,6 @@
+import Link from "next/link";
+import { ArrowRight } from "lucide-react";
+
 export default function AdminPage() {
   return (
     <div className="flex flex-col gap-6">
@@ -14,12 +17,22 @@ export default function AdminPage() {
       </header>
 
       <ul className="grid gap-4 sm:grid-cols-2">
+        <li className="rounded-lg border border-line bg-surface p-5 hover:border-accent transition-colors">
+          <div className="flex items-start justify-between">
+            <h2 className="text-sm font-semibold">Vuelos y rutas</h2>
+            <Link
+              href="/admin/vuelos"
+              className="inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline"
+            >
+              Gestionar
+              <ArrowRight size={14} />
+            </Link>
+          </div>
+          <p className="mt-1 text-sm leading-6 text-muted">
+            Alta y modificación de rutas, horarios, días de operación, tarifas y generación por lotes de salidas.
+          </p>
+        </li>
         {[
-          {
-            titulo: "Vuelos y rutas",
-            detalle:
-              "Alta y modificación de rutas, horarios, días de operación y vigencia anual.",
-          },
           {
             titulo: "Capacidades y precios",
             detalle:
