@@ -55,7 +55,8 @@ sistema-aerolinea/
 │   ├── arquitectura.md       # Software Architecture Document (SAD)
 │   ├── entidades.md          # Diccionario de datos exhaustivo
 │   ├── decisiones_diseno.md  # ADRs arquitectónicos
-│   └── diagrama_relacional.mmd # Esquema ER en Mermaid
+│   ├── diagrama_relacional.mmd # Esquema ER en Mermaid
+│   └── integracion_mercadopago.md # Especificación técnica de pagos con Mercado Pago
 ├── lib/                      # Utilidades transversales y clientes
 │   ├── prisma.ts             # Cliente singleton de Prisma ORM configurado con Neon adapter
 │   └── utils.ts              # Helper cn() para Tailwind CSS
@@ -94,6 +95,18 @@ sistema-aerolinea/
   ```
 - **Concurrencia en Reservas:** Siempre que se compre o emita un pasaje, ejecutar la operación dentro de una transacción atómica `prisma.$transaction(...)` para garantizar el bloqueo y verificación de cupos sin sobreventa.
 - **Soft Delete:** Asegurar que las consultas estándar incluyan `{ where: { deleted: false } }`.
+
+### 3.4. Pagos y Pasarela (Mercado Pago Checkout Pro)
+- **Modalidad Oficial:** Se utiliza exclusivamente **Mercado Pago Checkout Pro** mediante el SDK oficial (`mercadopago`), creando la preferencia de pago en el backend con `external_reference: transaccion.id.toString()`.
+- **Confirmación Obligatoria por Webhook:** La confirmación comercial y fiscal de la compra **nunca debe depender del retorno del cliente** (`back_urls`). Se confirma únicamente a través del Route Handler `POST /api/v1/webhooks/mercadopago`, validando el pago directamente contra la API de Mercado Pago (`GET /v1/payments/{id}`).
+- **Transacción Atómica de Aprobación:** Al confirmarse un pago aprobado, ejecutar en `prisma.$transaction(...)`:
+  1. Verificación de no duplicidad (Idempotencia frente a reintentos del webhook).
+  2. Inserción del registro en `pago` con estado `'APROBADO'`.
+  3. Actualización de `transaccion_compra` a `'CONFIRMADA'`.
+  4. Generación y emisión automática de la `factura` legal (relación 1:1 con la transacción).
+  5. Confirmación de los billetes en `pasaje` con estado `'EMITIDO'`.
+- **Compatibilidad con BigInt:** Los identificadores de `transaccion_compra`, `pago` y `pasaje` son `BigInt`; deben serializarse a `string` al enviarse a Mercado Pago (`external_reference`) o en respuestas JSON de la API.
+- Consultar detalles de interacción y endpoints en [docs/integracion_mercadopago.md](docs/integracion_mercadopago.md).
 
 ---
 
@@ -143,3 +156,4 @@ Antes de implementar modificaciones en entidades, rutas o modelos, consultar:
 - [docs/arquitectura.md](docs/arquitectura.md): Especificación de capas y flujo de datos.
 - [docs/decisiones_diseno.md](docs/decisiones_diseno.md): Decisiones arquitectónicas registradas (ADRs).
 - [docs/diagrama_relacional.mmd](docs/diagrama_relacional.mmd): Modelo ER visual.
+- [docs/integracion_mercadopago.md](docs/integracion_mercadopago.md): Especificación técnica de integración de pagos con Mercado Pago Checkout Pro, interacción entre entidades y contratos de API.

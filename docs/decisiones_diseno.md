@@ -12,6 +12,7 @@ Este documento registra formalmente las decisiones clave de arquitectura y dise�
 - [ADR-004: Autenticación y Autorización basada en Roles (RBAC) con Clerk](#adr-004-autenticación-y-autorización-basada-en-roles-rbac-con-clerk)
 - [ADR-005: Selección de Librería UI (shadcn/ui + Radix UI) y Visualización para el Dominio de Aerolíneas](#adr-005-selección-de-librería-ui-shadcnui--radix-ui-y-visualización-para-el-dominio-de-aerolíneas)
 - [ADR-006: Estrategia de Soft Delete (deleted: boolean) y Control de Concurrencia en Reservas](#adr-006-estrategia-de-soft-delete-deleted-boolean-y-control-de-concurrencia-en-reservas)
+- [ADR-007: Integración de Pasarela de Pagos con Mercado Pago Checkout Pro](#adr-007-integración-de-pasarela-de-pagos-con-mercado-pago-checkout-pro)
 
 ---
 
@@ -102,3 +103,21 @@ Este documento registra formalmente las decisiones clave de arquitectura y dise�
      - Si hay cupo suficiente, insertar los pasajes y registrar la transacción; si no, abortar la transacción con un error semántico de cupo agotado.
 - **Consecuencias:**
   - *Positivas:* Garantía absoluta contra la sobreventa de vuelos (overbooking no controlado). Preservación histórica y legal de datos de facturación e instancias pasadas.
+
+---
+
+### ADR-007: Integración de Pasarela de Pagos con Mercado Pago Checkout Pro
+
+- **Contexto:**
+  El sistema requiere procesar transacciones monetarias para la compra de pasajes (1 a 9 por operación), soportar pagos en línea tanto para usuarios registrados como invitados, y garantizar el cumplimiento fiscal y normativo sin almacenar datos sensibles de tarjetas de crédito o débito (cumplimiento PCI-DSS). Se evaluó el uso de Checkout Bricks (formulario embebido) versus Checkout Pro (redirección/modal oficial).
+- **Decisión:**
+  Se adopta **Mercado Pago Checkout Pro** integrando el SDK oficial de Node/TypeScript (`mercadopago`) en el servidor:
+  1. **Generación de Preferencias:** El backend crea la orden comercial `TRANSACCION_COMPRA` en estado `'PENDIENTE'`, valida la disponibilidad de cupos y genera la preferencia en Mercado Pago asociando `external_reference = transaccion.id.toString()`.
+  2. **Confirmación Asíncrona e Idempotente por Webhook:** La confirmación de compra y facturación nunca se confía al retorno del cliente (`back_urls`). Se gestiona exclusivamente a través del endpoint Route Handler `POST /api/v1/webhooks/mercadopago`, el cual valida el pago mediante consulta directa (`GET /v1/payments/{id}`) y actualiza atómicamente `PAGO`, `TRANSACCION_COMPRA`, `FACTURA` y `PASAJE` con `prisma.$transaction`.
+  3. **Especificación Técnica Completa:** Los diagramas de secuencia, la interacción con las entidades y los contratos de API REST v1 para la App Móvil están documentados en [docs/integracion_mercadopago.md](integracion_mercadopago.md).
+- **Consecuencias:**
+  - *Positivas:*
+    - Reducción total de responsabilidad y alcance PCI-DSS al delegar el formulario de cobro a Mercado Pago.
+    - Soporte inmediato para múltiples medios de pago (tarjetas, dinero en cuenta, Débito Inmediato).
+    - Flexibilidad de prueba con credenciales de Sandbox y tarjetas de test sin costo.
+    - Desacoplamiento idéntico para la futura aplicación móvil, que consumirá `/api/v1/compras/preferencia`.
