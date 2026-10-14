@@ -2,7 +2,7 @@ import type { Rol, Usuario } from "@prisma/client";
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionRole } from "./auth";
-import { NOMBRE_ROL_EN_DB } from "./roles";
+import { NOMBRE_ROL_EN_DB, normalizarRol } from "./roles";
 
 /**
  * Get-or-create de la fila `rol` (soft-delete incluido).
@@ -47,14 +47,6 @@ export async function getCurrentUsuario(): Promise<Usuario | null> {
     return null;
   }
 
-  const existente = await prisma.usuario.findFirst({
-    where: { clerkId: userId, deleted: false },
-  });
-
-  if (existente) {
-    return existente;
-  }
-
   const clerkUser = await currentUser();
 
   if (!clerkUser) {
@@ -70,8 +62,32 @@ export async function getCurrentUsuario(): Promise<Usuario | null> {
     throw new Error(`El usuario de Clerk ${userId} no tiene una dirección de email asociada.`);
   }
 
-  const rol = await getSessionRole();
+  // Leer el rol preferentemente de publicMetadata de Clerk o del session token
+  const meta = clerkUser.publicMetadata as Record<string, unknown> | undefined;
+  const metaRole = meta?.role ?? meta?.rol;
+  const rol = metaRole ? normalizarRol(metaRole) : await getSessionRole();
   const filaRol = await asegurarRol(NOMBRE_ROL_EN_DB[rol]);
+
+  const existente = await prisma.usuario.findFirst({
+    where: { clerkId: userId, deleted: false },
+    include: { rol: true },
+  });
+
+  if (existente) {
+    // Si el rol en Clerk difiere del rol actual en Neon, actualizarlo inmediatamente
+    if (existente.roleId !== filaRol.id) {
+      return prisma.usuario.update({
+        where: { id: existente.id },
+        data: {
+          roleId: filaRol.id,
+          name: clerkUser.firstName ?? clerkUser.username ?? existente.name,
+          apellido: clerkUser.lastName ?? existente.apellido,
+          email,
+        },
+      });
+    }
+    return existente;
+  }
 
   try {
     return await prisma.usuario.create({
