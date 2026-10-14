@@ -44,10 +44,27 @@ export function esRolUsuario(valor: unknown): valor is RolUsuario {
 }
 
 /**
- * Normaliza cualquier valor proveniente del claim `role`.
- * Un claim ausente o inválido degrada siempre a `pasajero`, de modo que un
- * usuario creado por sign-up público nunca puede escalar privilegios.
+ * Normaliza cualquier valor proveniente del claim `role` o de metadata de Clerk.
+ * Acepta variantes en minúsculas, mayúsculas o nombres de base de datos.
+ * Un claim ausente o inválido degrada siempre a `pasajero`.
  */
 export function normalizarRol(valor: unknown): RolUsuario {
-  return esRolUsuario(valor) ? valor : ROL_POR_DEFECTO;
+  if (typeof valor !== "string") {
+    return ROL_POR_DEFECTO;
+  }
+  const limpio = valor.trim().toLowerCase();
+  if (limpio === "admin" || limpio === "administrador") {
+    return "admin";
+  }
+  if (
+    limpio === "mostrador" ||
+    limpio === "empleado_mostrador" ||
+    limpio === "empleado mostrador"
+  ) {
+    return "mostrador";
+  }
+  if (limpio === "pasajero") {
+    return "pasajero";
+  }
+  return ROL_POR_DEFECTO;
 }

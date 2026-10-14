@@ -21,11 +21,19 @@ export default function MostradorLoginPage() {
           </p>
         </header>
 
-        <div className="flex justify-center">
+        <div className="cl-staff-auth flex justify-center [&_.cl-footer]:!hidden [&_.cl-footerAction]:!hidden [&_.cl-footerActionLink]:!hidden [&_[class*='footer']]:!hidden [&_[class*='Footer']]:!hidden">
           <SignIn
             path="/mostrador/login"
             routing="path"
-            withSignUp={false}
+            appearance={{
+              elements: {
+                footer: { display: "none" },
+                footerAction: { display: "none" },
+                footerActionText: { display: "none" },
+                footerActionLink: { display: "none" },
+                footerPages: { display: "none" },
+              },
+            }}
             fallbackRedirectUrl="/mostrador"
           />
         </div>

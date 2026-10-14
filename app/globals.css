@@ -46,3 +46,14 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
+
+.cl-staff-auth .cl-footer,
+.cl-staff-auth .cl-footerItem,
+.cl-staff-auth .cl-footerAction,
+.cl-staff-auth .cl-footerActionText,
+.cl-staff-auth .cl-footerActionLink,
+.cl-staff-auth .cl-footerPages,
+.cl-staff-auth [class*="footer"],
+.cl-staff-auth [class*="Footer"] {
+  display: none !important;
+}

@@ -1,9 +1,10 @@
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { clerkMiddleware, createRouteMatcher, createClerkClient } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { HOME_POR_ROL, normalizarRol } from "@/modules/usuarios/roles";
 
 const esRutaPublica = createRouteMatcher([
   "/",
+  "/vuelos(.*)",
   "/login(.*)",
   "/registro(.*)",
   "/mostrador/login(.*)",
@@ -19,7 +20,22 @@ const esAreaAdmin = createRouteMatcher(["/admin(.*)"]);
 
 export const proxy = clerkMiddleware(async (auth, request) => {
   const { userId, sessionClaims } = await auth();
-  const rol = normalizarRol(sessionClaims?.role);
+  let rol = normalizarRol(sessionClaims?.role);
+
+  // Fallback si el claim de rol no está configurado en el session token de Clerk
+  if (userId && !sessionClaims?.role && process.env.CLERK_SECRET_KEY) {
+    try {
+      const client = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY });
+      const user = await client.users.getUser(userId);
+      const meta = user.publicMetadata as Record<string, unknown> | undefined;
+      const metaRole = meta?.role ?? meta?.rol;
+      if (metaRole) {
+        rol = normalizarRol(metaRole);
+      }
+    } catch {
+      // Ignorar y mantener rol normalizado
+    }
+  }
 
   // Sin sesión: sólo se dejan pasar las rutas públicas de cada área.
   if (!userId) {

@@ -1,9 +1,13 @@
 import { requireRole } from "@/modules/usuarios/auth";
+import { getCurrentUsuario } from "@/modules/usuarios/service";
 
 export default async function MostradorPanelLayout({
   children,
-}: LayoutProps<"/mostrador">) {
+}: {
+  children: React.ReactNode;
+}) {
   await requireRole("mostrador");
+  await getCurrentUsuario();
 
   return (
     <div className="flex flex-1 flex-col bg-page font-sans text-ink">

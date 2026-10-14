@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Topbar } from "@/components/topbar";
+import { AuthSync } from "@/modules/usuarios/components/AuthSync";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -19,7 +20,11 @@ export const metadata: Metadata = {
   description: "Buscá vuelos programados por origen, destino y fecha.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html
       lang="es"
@@ -37,6 +42,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             },
           }}
         >
+          <AuthSync />
           <Topbar />
           <div className="flex flex-1 flex-col">{children}</div>
         </ClerkProvider>

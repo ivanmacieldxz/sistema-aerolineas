@@ -1,15 +1,33 @@
-import { auth } from "@clerk/nextjs/server";
+import { auth, currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { HOME_POR_ROL, LOGIN_POR_ROL, normalizarRol, type RolUsuario } from "./roles";
 
 /**
- * Rol efectivo del usuario de la sesión actual, leído del claim `role`
- * del session token de Clerk (`user.public_metadata.role`).
- * Un claim ausente o inválido degrada a `pasajero`.
+ * Rol efectivo del usuario de la sesión actual.
+ * Lee del claim `role` del session token de Clerk, y si no está configurado el claim,
+ * consulta directamente `publicMetadata` del usuario en Clerk.
+ * Un claim/metadata ausente o inválido degrada a `pasajero`.
  */
 export async function getSessionRole(): Promise<RolUsuario> {
   const { sessionClaims } = await auth();
-  return normalizarRol(sessionClaims?.role);
+  if (sessionClaims?.role) {
+    return normalizarRol(sessionClaims.role);
+  }
+
+  try {
+    const user = await currentUser();
+    if (user?.publicMetadata) {
+      const meta = user.publicMetadata as Record<string, unknown>;
+      const metaRole = meta.role ?? meta.rol;
+      if (metaRole) {
+        return normalizarRol(metaRole);
+      }
+    }
+  } catch {
+    // Si falla o no hay sesión
+  }
+
+  return "pasajero";
 }
 
 /**
@@ -22,13 +40,13 @@ export async function getSessionRole(): Promise<RolUsuario> {
  * profundidad): el proxy corta el acceso de red y este guard corta el render.
  */
 export async function requireRole(role: RolUsuario): Promise<void> {
-  const { userId, sessionClaims } = await auth();
+  const { userId } = await auth();
 
   if (!userId) {
     redirect(LOGIN_POR_ROL[role]);
   }
 
-  const rolActual = normalizarRol(sessionClaims?.role);
+  const rolActual = await getSessionRole();
 
   if (rolActual !== role) {
     redirect(HOME_POR_ROL[rolActual]);
