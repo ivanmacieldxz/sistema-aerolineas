@@ -28,8 +28,8 @@ type FlightItem = {
   vigenciaHasta: Date;
   capacidadEconomy: number;
   capacidadPrimera: number;
-  precioEconomy: { toFixed: (digits: number) => string } | number;
-  precioPrimera: { toFixed: (digits: number) => string } | number;
+  precioEconomy: number;
+  precioPrimera: number;
   activo: boolean;
   diasSemana: { diaSemana: number }[];
   _count: { instancias: number };

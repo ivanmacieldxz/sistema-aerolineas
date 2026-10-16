@@ -1,12 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireRole } from "@/modules/usuarios/auth";
 import { flightSchema, airportSchema, type FlightFormValues, type AirportFormValues } from "./schemas";
 import {
   createFlightWithBatchInstances,
   createAirport,
   toggleFlightStatus,
   softDeleteFlight,
+  cancelFlightInstance,
+  FlightInstanceCancellationError,
 } from "./service";
 
 type ActionResponse = {
@@ -122,6 +125,37 @@ export async function deleteFlightAction(vueloIdStr: string): Promise<ActionResp
     return {
       success: false,
       message: errorMessage,
+    };
+  }
+}
+
+export async function cancelFlightInstanceAction(instanciaIdStr: string): Promise<ActionResponse> {
+  await requireRole("admin");
+
+  if (!/^[1-9]\d*$/.test(instanciaIdStr)) {
+    return {
+      success: false,
+      message: "La salida seleccionada no es válida.",
+    };
+  }
+
+  try {
+    const canceledTickets = await cancelFlightInstance(BigInt(instanciaIdStr));
+
+    revalidatePath("/admin/vuelos");
+    revalidatePath("/vuelos");
+
+    return {
+      success: true,
+      message: `Salida cancelada. ${canceledTickets} ${canceledTickets === 1 ? "pasaje fue marcado" : "pasajes fueron marcados"} como cancelado${canceledTickets === 1 ? "" : "s"}.`,
+    };
+  } catch (error: unknown) {
+    return {
+      success: false,
+      message:
+        error instanceof FlightInstanceCancellationError
+          ? error.message
+          : "No se pudo cancelar la salida. Intentá nuevamente.",
     };
   }
 }

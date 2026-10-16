@@ -282,4 +282,4 @@ Este documento detalla las entidades que componen la base de datos relacional de
 - **Reglas de Negocio:**
   - **Límite de capacidad Economy:** Para cada instancia de vuelo activa (`deleted = FALSE`), el total de pasajes en estado `'EMITIDO'` o `'CHECK_IN'` con `clase = 'ECONOMY'` no debe superar la `capacidad_economy` configurada en el `VUELO`.
   - **Límite de capacidad Primera Clase:** Para cada instancia de vuelo activa (`deleted = FALSE`), el total de pasajes en estado `'EMITIDO'` o `'CHECK_IN'` con `clase = 'PRIMERA'` no debe superar la `capacidad_primera` configurada en el `VUELO`.
-  - **Cancelación o reprogramación de vuelo:** En caso de que la `INSTANCIA_VUELO` pase a estado `'CANCELADO'`, los pasajes asociados deben actualizar su estado según las políticas de reembolso o notificación por correo a los pasajeros.
+  - **Cancelación de una salida:** Al cancelar una `INSTANCIA_VUELO`, los pasajes asociados en estado `'EMITIDO'` o `'CHECK_IN'` se actualizan a `'CANCELADO'` dentro de la misma transacción. Los registros se conservan para auditoría; reembolsos y notificaciones a pasajeros se gestionan en flujos posteriores.

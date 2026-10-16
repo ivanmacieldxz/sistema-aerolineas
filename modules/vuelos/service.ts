@@ -30,6 +30,23 @@ export type FlightInstanceSearchResult = {
   estado: string;
 };
 
+export type AdminFlightInstance = {
+  id: string;
+  fechaSalida: string;
+  estado: string;
+  numeroVuelo: string;
+  origenIata: string;
+  destinoIata: string;
+  origenCiudad: string;
+  destinoCiudad: string;
+  horaSalida: Date;
+  horaLlegada: Date;
+  pasajesActivos: number;
+  cancelable: boolean;
+};
+
+export class FlightInstanceCancellationError extends Error {}
+
 /**
  * Obtiene todos los aeropuertos registrados en el sistema ordenados por ciudad y código IATA.
  */
@@ -233,7 +250,7 @@ export async function searchFlightInstances(params: {
  * Obtiene todos los vuelos configurados para el panel de administración.
  */
 export async function getAllFlights() {
-  return prisma.vuelo.findMany({
+  const flights = await prisma.vuelo.findMany({
     where: { deleted: false },
     include: {
       origen: true,
@@ -247,6 +264,12 @@ export async function getAllFlights() {
     },
     orderBy: { numeroVuelo: "asc" },
   });
+
+  return flights.map((flight) => ({
+    ...flight,
+    precioEconomy: Number(flight.precioEconomy),
+    precioPrimera: Number(flight.precioPrimera),
+  }));
 }
 
 /**
@@ -265,6 +288,130 @@ export async function getFlightById(id: bigint) {
         take: 30,
       },
     },
+  });
+}
+
+export async function getFlightInstancesByDate(fechaSalida: Date): Promise<AdminFlightInstance[]> {
+  const instances = await prisma.instanciaVuelo.findMany({
+    where: {
+      fechaSalida,
+      deleted: false,
+      vuelo: { deleted: false },
+    },
+    include: {
+      vuelo: {
+        select: {
+          numeroVuelo: true,
+          origenIata: true,
+          destinoIata: true,
+          horaSalida: true,
+          horaLlegada: true,
+          origen: { select: { ciudad: true } },
+          destino: { select: { ciudad: true } },
+        },
+      },
+      _count: {
+        select: {
+          pasajes: {
+            where: { estado: { in: ["EMITIDO", "CHECK_IN"] } },
+          },
+        },
+      },
+    },
+    orderBy: { vuelo: { horaSalida: "asc" } },
+  });
+
+  const now = new Date();
+
+  return instances.map((instance) => {
+    const departureAt = new Date(instance.fechaSalida);
+    departureAt.setUTCHours(
+      instance.vuelo.horaSalida.getUTCHours(),
+      instance.vuelo.horaSalida.getUTCMinutes(),
+      instance.vuelo.horaSalida.getUTCSeconds(),
+      0,
+    );
+
+    return {
+      id: instance.id.toString(),
+      fechaSalida: instance.fechaSalida.toISOString().slice(0, 10),
+      estado: instance.estado,
+      numeroVuelo: instance.vuelo.numeroVuelo,
+      origenIata: instance.vuelo.origenIata,
+      destinoIata: instance.vuelo.destinoIata,
+      origenCiudad: instance.vuelo.origen.ciudad,
+      destinoCiudad: instance.vuelo.destino.ciudad,
+      horaSalida: instance.vuelo.horaSalida,
+      horaLlegada: instance.vuelo.horaLlegada,
+      pasajesActivos: instance._count.pasajes,
+      cancelable:
+        departureAt > now && ["PROGRAMADO", "DEMORADO"].includes(instance.estado),
+    };
+  });
+}
+
+export async function cancelFlightInstance(instanciaId: bigint): Promise<number> {
+  return prisma.$transaction(async (tx) => {
+    const instance = await tx.instanciaVuelo.findFirst({
+      where: {
+        id: instanciaId,
+        deleted: false,
+        vuelo: { deleted: false },
+      },
+      select: {
+        id: true,
+        fechaSalida: true,
+        estado: true,
+        vuelo: { select: { horaSalida: true } },
+      },
+    });
+
+    if (!instance) {
+      throw new FlightInstanceCancellationError("No se encontró la salida seleccionada.");
+    }
+
+    if (!["PROGRAMADO", "DEMORADO"].includes(instance.estado)) {
+      throw new FlightInstanceCancellationError(
+        instance.estado === "CANCELADO"
+          ? "Esta salida ya está cancelada."
+          : "Solo se pueden cancelar salidas programadas o demoradas.",
+      );
+    }
+
+    const departureAt = new Date(instance.fechaSalida);
+    departureAt.setUTCHours(
+      instance.vuelo.horaSalida.getUTCHours(),
+      instance.vuelo.horaSalida.getUTCMinutes(),
+      instance.vuelo.horaSalida.getUTCSeconds(),
+      0,
+    );
+
+    if (departureAt <= new Date()) {
+      throw new FlightInstanceCancellationError("No se pueden cancelar salidas que ya comenzaron.");
+    }
+
+    const updated = await tx.instanciaVuelo.updateMany({
+      where: {
+        id: instanciaId,
+        deleted: false,
+        estado: instance.estado,
+      },
+      data: { estado: "CANCELADO" },
+    });
+
+    if (updated.count !== 1) {
+      throw new FlightInstanceCancellationError("La salida cambió de estado. Actualizá la página e intentá otra vez.");
+    }
+
+    const canceledTickets = await tx.pasaje.updateMany({
+      where: {
+        instanciaVueloId: instanciaId,
+        estado: { in: ["EMITIDO", "CHECK_IN"] },
+      },
+      data: { estado: "CANCELADO" },
+    });
+
+    return canceledTickets.count;
   });
 }
 
