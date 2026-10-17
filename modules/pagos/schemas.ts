@@ -74,6 +74,24 @@ export const transaccionPasajesSchema = preferenciaRequestSchema.omit({
   facturacion: true,
 });
 
+/**
+ * Notificación (webhook) enviada por Mercado Pago.
+ * Se acepta la estructura mínima del evento; el `paymentId` puede llegar tanto
+ * en el body (`data.id`) como en el query string, por lo que la ruta lo normaliza.
+ */
+export const webhookPayloadSchema = z.object({
+  id: z.union([z.string(), z.number()]).optional(),
+  type: z.string().optional(),
+  action: z.string().optional(),
+  data: z
+    .object({
+      id: z.union([z.string(), z.number()]).optional(),
+    })
+    .optional(),
+  external_reference: z.string().optional(),
+});
+
 export type PasajeroInput = z.infer<typeof pasajeroSchema>;
 export type PreferenciaRequest = z.infer<typeof preferenciaRequestSchema>;
 export type TransaccionPasajesInput = z.infer<typeof transaccionPasajesSchema>;
+export type WebhookPayload = z.infer<typeof webhookPayloadSchema>;
