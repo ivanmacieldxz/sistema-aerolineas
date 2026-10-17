@@ -1,4 +1,6 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { filtroPasajeOcupaCupo } from "@/modules/pasajes/service";
 import { parseTimeStringToDate, generarFechasPorDias } from "./utils";
 import type { FlightFormValues, AirportFormValues } from "./schemas";
 
@@ -146,9 +148,63 @@ export async function createFlightWithBatchInstances(data: FlightFormValues) {
   });
 }
 
+/** Instancia de vuelo con su vuelo, aeropuertos y pasajes que ocupan cupo. */
+type InstanciaVueloConPasajes = Prisma.InstanciaVueloGetPayload<{
+  include: {
+    vuelo: { include: { origen: true; destino: true } };
+    pasajes: { select: { clase: true } };
+  };
+}>;
+
+/** Ficha de una salida concreta, usada por la búsqueda y por el checkout. */
+export type InstanciaVueloDetalle = FlightInstanceSearchResult;
+
+/**
+ * Proyecta una `InstanciaVuelo` al resultado de búsqueda/detalle, aplicando el
+ * mismo cálculo de plazas disponibles por clase (regla única de negocio).
+ */
+function mapearInstanciaVuelo(
+  instancia: InstanciaVueloConPasajes
+): FlightInstanceSearchResult {
+  const pasajesEconomy = instancia.pasajes.filter(
+    (p) => p.clase.toUpperCase() === "ECONOMY"
+  ).length;
+  const pasajesPrimera = instancia.pasajes.filter(
+    (p) => p.clase.toUpperCase() === "PRIMERA"
+  ).length;
+
+  const plazasDisponiblesEconomy = Math.max(
+    0,
+    instancia.vuelo.capacidadEconomy - pasajesEconomy
+  );
+  const plazasDisponiblesPrimera = Math.max(
+    0,
+    instancia.vuelo.capacidadPrimera - pasajesPrimera
+  );
+
+  return {
+    id: instancia.id.toString(),
+    vueloId: instancia.vueloId.toString(),
+    numeroVuelo: instancia.vuelo.numeroVuelo,
+    fechaSalida: instancia.fechaSalida.toISOString().slice(0, 10),
+    horaSalida: instancia.vuelo.horaSalida,
+    horaLlegada: instancia.vuelo.horaLlegada,
+    origen: instancia.vuelo.origen,
+    destino: instancia.vuelo.destino,
+    capacidadEconomy: instancia.vuelo.capacidadEconomy,
+    plazasDisponiblesEconomy,
+    precioEconomy: Number(instancia.vuelo.precioEconomy),
+    capacidadPrimera: instancia.vuelo.capacidadPrimera,
+    plazasDisponiblesPrimera,
+    precioPrimera: Number(instancia.vuelo.precioPrimera),
+    estado: instancia.estado,
+  };
+}
+
 /**
  * Realiza la búsqueda de vuelos sobre la tabla `InstanciaVuelo`.
- * Calcula las plazas disponibles reales en base a los pasajes activos emitidos.
+ * Calcula las plazas disponibles reales en base a los pasajes que ocupan cupo
+ * (activos y no expirados por el TTL de reserva).
  */
 export async function searchFlightInstances(params: {
   origen: string;
@@ -177,9 +233,7 @@ export async function searchFlightInstances(params: {
         },
       },
       pasajes: {
-        where: {
-          estado: { in: ["EMITIDO", "CHECK_IN"] },
-        },
+        where: filtroPasajeOcupaCupo(),
         select: {
           clase: true,
         },
@@ -192,41 +246,36 @@ export async function searchFlightInstances(params: {
     },
   });
 
-  return instancias.map((instancia) => {
-    const pasajesEconomy = instancia.pasajes.filter(
-      (p) => p.clase.toUpperCase() === "ECONOMY"
-    ).length;
-    const pasajesPrimera = instancia.pasajes.filter(
-      (p) => p.clase.toUpperCase() === "PRIMERA"
-    ).length;
+  return instancias.map(mapearInstanciaVuelo);
+}
 
-    const plazasDisponiblesEconomy = Math.max(
-      0,
-      instancia.vuelo.capacidadEconomy - pasajesEconomy
-    );
-    const plazasDisponiblesPrimera = Math.max(
-      0,
-      instancia.vuelo.capacidadPrimera - pasajesPrimera
-    );
+/**
+ * Obtiene la ficha de una salida concreta por su id para alimentar el checkout.
+ *
+ * Devuelve `null` si el identificador no es numérico, la instancia no existe o
+ * fue dada de baja, la salida está cancelada o el vuelo está inactivo.
+ */
+export async function getInstanciaVueloDetalle(
+  instanciaId: string
+): Promise<InstanciaVueloDetalle | null> {
+  if (!/^\d+$/.test(instanciaId)) {
+    return null;
+  }
 
-    return {
-      id: instancia.id.toString(),
-      vueloId: instancia.vueloId.toString(),
-      numeroVuelo: instancia.vuelo.numeroVuelo,
-      fechaSalida: params.fecha,
-      horaSalida: instancia.vuelo.horaSalida,
-      horaLlegada: instancia.vuelo.horaLlegada,
-      origen: instancia.vuelo.origen,
-      destino: instancia.vuelo.destino,
-      capacidadEconomy: instancia.vuelo.capacidadEconomy,
-      plazasDisponiblesEconomy,
-      precioEconomy: Number(instancia.vuelo.precioEconomy),
-      capacidadPrimera: instancia.vuelo.capacidadPrimera,
-      plazasDisponiblesPrimera,
-      precioPrimera: Number(instancia.vuelo.precioPrimera),
-      estado: instancia.estado,
-    };
+  const instancia = await prisma.instanciaVuelo.findFirst({
+    where: {
+      id: BigInt(instanciaId),
+      deleted: false,
+      estado: { not: "CANCELADO" },
+      vuelo: { activo: true, deleted: false },
+    },
+    include: {
+      vuelo: { include: { origen: true, destino: true } },
+      pasajes: { where: filtroPasajeOcupaCupo(), select: { clase: true } },
+    },
   });
+
+  return instancia ? mapearInstanciaVuelo(instancia) : null;
 }
 
 /**

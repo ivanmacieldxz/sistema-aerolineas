@@ -140,7 +140,7 @@ export async function crearPreferenciaDePago(
   // El total es exactamente precio * cantidad, por lo que redondear a 2
   // decimales recupera el precio unitario original.
   const precioUnitario = Number((total / cantidad).toFixed(2));
-  const urlRetorno = `${getBaseUrl()}/checkout/resultado`;
+  const urlRetorno = `${getBaseUrl()}/checkout/resultado?transaccionId=${transaccion.id.toString()}`;
 
   let preference;
   try {
