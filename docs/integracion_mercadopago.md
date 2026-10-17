@@ -109,12 +109,16 @@ sequenceDiagram
 - **Response `201 Created`:**
   ```json
   {
-    "transaccionId": "502",
-    "preferenceId": "123456789-abcd-ef01-2345-6789abcdef01",
-    "initPoint": "https://sandbox.mercadopago.com.ar/checkout/v1/redirect?pref_id=...",
-    "total": 85000.00
+    "success": true,
+    "data": {
+      "transaccionId": "502",
+      "preferenceId": "123456789-abcd-ef01-2345-6789abcdef01",
+      "initPoint": "https://sandbox.mercadopago.com.ar/checkout/v1/redirect?pref_id=...",
+      "total": 85000.00
+    }
   }
   ```
+- **Errores:** `400 VALIDATION_ERROR` · `404 INSTANCIA_NO_ENCONTRADA` · `409 SIN_CUPO` / `VUELO_NO_DISPONIBLE` / `INSTANCIA_CANCELADA` · `500 PAYMENT_GATEWAY_NOT_CONFIGURED` / `INTERNAL_ERROR` · `502 PAYMENT_GATEWAY_UNAVAILABLE`.
 
 ### 4.2. Webhook de Notificaciones de Mercado Pago
 - **Ruta:** `POST /api/v1/webhooks/mercadopago`
@@ -131,29 +135,44 @@ sequenceDiagram
 - **Response `200 OK`:**
   ```json
   {
-    "transaccionId": "502",
-    "estado": "CONFIRMADA",
-    "total": 85000.00,
-    "pago": {
-      "estado": "APROBADO",
-      "metodoPago": "TARJETA_CREDITO",
-      "idTransaccionPasarela": "9876543210"
-    },
-    "factura": {
-      "numeroFactura": "FC-B-0001-00000502",
-      "tipoFactura": "B",
-      "total": 85000.00
-    },
-    "pasajes": [
-      {
-        "codigo": "1001",
-        "pasajero": "Juan Pérez",
-        "clase": "ECONOMY",
-        "estado": "EMITIDO"
-      }
-    ]
+    "success": true,
+    "data": {
+      "transaccionId": "502",
+      "estado": "CONFIRMADA",
+      "total": 85000.00,
+      "pago": {
+        "estado": "APROBADO",
+        "metodoPago": "TARJETA_CREDITO",
+        "idTransaccionPasarela": "9876543210"
+      },
+      "factura": {
+        "numeroFactura": "FC-B-0001-00000502",
+        "tipoFactura": "B",
+        "total": 85000.00
+      },
+      "pasajes": [
+        {
+          "codigo": "1001",
+          "pasajero": "Juan Pérez",
+          "clase": "ECONOMY",
+          "estado": "EMITIDO"
+        }
+      ]
+    }
   }
   ```
+- **Errores:** `404 TRANSACCION_NO_ENCONTRADA`.
+
+---
+
+## 4.4. Contrato Uniforme de Respuestas
+
+Todas las respuestas de la API REST v1 respetan el mismo sobre:
+
+- **Éxito:** `{ "success": true, "data": ... }` (excepto el webhook, que responde `{ "received": true }`).
+- **Error:** `{ "success": false, "error": { "code": "...", "message": "..." } }`.
+
+Los códigos de error de dominio llevan su status HTTP semántico asociado (`400`, `401`, `404`, `409`, `500`, `502`); los errores no controlados degradan a `500 INTERNAL_ERROR` sin filtrar detalles internos.
 
 ---
 
