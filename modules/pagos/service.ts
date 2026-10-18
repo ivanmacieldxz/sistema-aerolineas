@@ -1,3 +1,4 @@
+import { MercadoPagoError } from "mercadopago";
 import { prisma } from "@/lib/prisma";
 import {
   crearTransaccionConPasajes,
@@ -202,12 +203,24 @@ export async function crearPreferenciaDePago(
  * Consulta inversa de autenticidad: recupera un pago directamente desde la API
  * de Mercado Pago (`GET /v1/payments/{id}`).
  *
- * @throws {PagoError} `PAYMENT_GATEWAY_UNAVAILABLE` si la consulta falla.
+ * Distingue el `404` (el pago no existe o es de otro comercio: reintentar nunca
+ * cambia el resultado) del resto de fallos, que sí son transitorios.
+ *
+ * @throws {PagoError} `PAGO_NO_ENCONTRADO` si Mercado Pago no reconoce el pago.
+ * @throws {PagoError} `PAYMENT_GATEWAY_UNAVAILABLE` ante un fallo transitorio
+ *   (timeout, 5xx, credenciales inválidas, etc.).
  */
 export async function consultarPagoEnPasarela(paymentId: string | number) {
   try {
     return await getPaymentClient().get({ id: paymentId });
   } catch (error) {
+    if (error instanceof MercadoPagoError && error.status === 404) {
+      throw new PagoError(
+        "PAGO_NO_ENCONTRADO",
+        `Mercado Pago no reconoce el pago ${paymentId}.`
+      );
+    }
+
     console.error("Fallo al consultar el pago en Mercado Pago:", error);
     throw new PagoError(
       "PAYMENT_GATEWAY_UNAVAILABLE",
@@ -223,6 +236,9 @@ export async function consultarPagoEnPasarela(paymentId: string | number) {
  * - Verifica el pago contra la API antes de mutar.
  * - Resuelve la transacción por `external_reference` y aplica:
  *   `Pago` upsert 1:1, `TransaccionCompra` y `Factura`/pasajes según el estado.
+ *
+ * @throws {PagoError} `PAGO_NO_ENCONTRADO` si Mercado Pago no reconoce el pago.
+ * @throws {PagoError} `PAYMENT_GATEWAY_UNAVAILABLE` si la consulta inversa falla.
  */
 export async function procesarNotificacionPago(
   payload: WebhookPayload

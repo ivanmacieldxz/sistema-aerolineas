@@ -5,6 +5,7 @@ import { HOME_POR_ROL, normalizarRol } from "@/modules/usuarios/roles";
 const esRutaPublica = createRouteMatcher([
   "/",
   "/vuelos(.*)",
+  "/checkout(.*)",
   "/login(.*)",
   "/registro(.*)",
   "/mostrador/login(.*)",
