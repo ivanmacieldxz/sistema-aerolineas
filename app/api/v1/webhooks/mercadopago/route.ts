@@ -1,66 +1,37 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { webhookPayloadSchema, type WebhookPayload } from "@/modules/pagos/schemas";
+import { errorResponse, validationErrorResponse } from "@/lib/api-response";
+import { PagoError } from "@/modules/pagos/errors";
+import {
+  webhookPayloadSchema,
+  type WebhookPayload,
+} from "@/modules/pagos/schemas";
 import { procesarNotificacionPago } from "@/modules/pagos/service";
+import { validarFirmaWebhook } from "@/modules/pagos/webhook";
 
 export const runtime = "nodejs";
 
 /**
- * Valida la firma del webhook (`x-signature` / `x-request-id`) contra
- * `MERCADOPAGO_WEBHOOK_SECRET`, según el manifest oficial
- * `id:{data.id};request-id:{x-request-id};ts:{ts};`.
- *
- * @returns `null` si el secreto no está configurado (no se valida),
- * `true` si la firma es correcta y `false` si es inválida o faltan datos.
+ * Log detallado de cada notificación (URL, headers y body). Solo se habilita
+ * para diagnóstico local: en producción expone datos de la pasarela y del
+ * comprador sin aportar valor operativo.
  */
-function validarFirma(request: NextRequest, dataId: string): boolean | null {
-  const secret = process.env.MERCADOPAGO_WEBHOOK_SECRET;
+const LOG_VERBOSO = process.env.MERCADOPAGO_WEBHOOK_VERBOSE_LOG === "true";
 
-  if (!secret) {
-    return null;
-  }
+/**
+ * Interruptor temporal para demos: con `SKIP_WEBHOOK_VALIDATION=true` se omite
+ * la verificación de la firma `x-signature` y se acepta cualquier notificación
+ * que traiga el payload esperado. Es un modo inseguro: mantener apagado fuera
+ * de entornos locales/demo mientras se resuelven los problemas de validación.
+ */
+const SKIP_WEBHOOK_VALIDATION = process.env.SKIP_WEBHOOK_VALIDATION === "true";
 
-  const signature = request.headers.get("x-signature");
-  const requestId = request.headers.get("x-request-id");
-
-  if (!signature || !requestId) {
-    return false;
-  }
-
-  let ts: string | undefined;
-  let v1: string | undefined;
-
-  for (const parte of signature.split(",")) {
-    const separador = parte.indexOf("=");
-
-    if (separador === -1) {
-      continue;
-    }
-
-    const clave = parte.slice(0, separador).trim();
-    const valor = parte.slice(separador + 1).trim();
-
-    if (clave === "ts") ts = valor;
-    if (clave === "v1") v1 = valor;
-  }
-
-  if (!ts || !v1) {
-    return false;
-  }
-
-  // Mercado Pago exige `data.id` en minúsculas cuando es alfanumérico.
-  const idNormalizado = /^\d+$/.test(dataId) ? dataId : dataId.toLowerCase();
-  const manifest = `id:${idNormalizado};request-id:${requestId};ts:${ts};`;
-  const firmaEsperada = createHmac("sha256", secret).update(manifest).digest("hex");
-
-  const bufferEsperado = Buffer.from(firmaEsperada, "utf8");
-  const bufferRecibido = Buffer.from(v1, "utf8");
-
-  if (bufferEsperado.length !== bufferRecibido.length) {
-    return false;
-  }
-
-  return timingSafeEqual(bufferEsperado, bufferRecibido);
+/**
+ * Acuse de recibo: es la única respuesta que evita los reintentos de Mercado
+ * Pago, por lo que se usa para todo evento procesado, no aplicable o
+ * definitivamente no recuperable.
+ */
+function recibido(): NextResponse {
+  return NextResponse.json({ received: true });
 }
 
 /**
@@ -68,12 +39,23 @@ function validarFirma(request: NextRequest, dataId: string): boolean | null {
  * Mercado Pago puede enviar el `paymentId`/`type` tanto en el body como en el
  * query string, por lo que se aceptan ambas fuentes.
  */
-function normalizarPayload(request: NextRequest, body: unknown): WebhookPayload {
+function normalizarPayload(request: NextRequest, raw: string): WebhookPayload {
+  let cuerpo: Record<string, unknown> = {};
+
+  if (raw.trim().length > 0) {
+    try {
+      const parseado: unknown = JSON.parse(raw);
+
+      if (typeof parseado === "object" && parseado !== null) {
+        cuerpo = parseado as Record<string, unknown>;
+      }
+    } catch {
+      // Cuerpo no parseable: se continúa con lo disponible en el query string.
+      cuerpo = {};
+    }
+  }
+
   const searchParams = request.nextUrl.searchParams;
-  const cuerpo =
-    typeof body === "object" && body !== null
-      ? (body as Record<string, unknown>)
-      : {};
   const data =
     typeof cuerpo.data === "object" && cuerpo.data !== null
       ? (cuerpo.data as Record<string, unknown>)
@@ -111,68 +93,120 @@ function normalizarPayload(request: NextRequest, body: unknown): WebhookPayload 
  * `POST /api/v1/webhooks/mercadopago`
  *
  * Endpoint público que recibe las notificaciones asíncronas de Mercado Pago.
- * Verifica la firma (si hay secreto configurado) y delega el procesamiento
- * idempotente al módulo de pagos, que consulta el pago contra la API de MP antes
- * de mutar la base de datos.
+ * Orden de defensa:
+ *
+ * 1. Se descartan los eventos legacy de IPN (`?topic=`, `merchant_order`), que
+ *    no son de pago y MP emite en paralelo a las notificaciones actuales.
+ * 2. Se valida la firma `x-signature` contra `MERCADOPAGO_WEBHOOK_SECRET`. Si el
+ *    secreto no está configurado se responde un error: sin él no hay forma de
+ *    distinguir a Mercado Pago de un tercero (fail-closed).
+ * 3. El módulo de pagos consulta el pago contra la API de MP antes de mutar la
+ *    base de datos, de forma idempotente.
+ *
+ * Los fallos que un reintento podría resolver (base caída, pasarela 5xx o
+ * timeout) se responden con error; el resto se acusa con `200 { received: true }`.
  */
 export async function POST(request: NextRequest) {
-  const dataId =
-    request.nextUrl.searchParams.get("data.id") ??
-    request.nextUrl.searchParams.get("id") ??
-    "";
+  // El cuerpo se lee una única vez: se registra y se reutiliza para el parseo.
+  const raw = await request.text();
 
-  if (validarFirma(request, dataId) === false) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: {
-          code: "INVALID_SIGNATURE",
-          message: "La firma del webhook no es válida.",
-        },
-      },
-      { status: 401 }
+  const searchParams = request.nextUrl.searchParams;
+  const requestId = request.headers.get("x-request-id");
+
+  // Los eventos legacy (`?topic=`) traen el id de una orden de compra, no de un
+  // pago: procesarlos como pago siempre falla y genera reintentos perpetuos.
+  if (searchParams.has("topic")) {
+    return recibido();
+  }
+
+  const dataId = searchParams.get("data.id") ?? searchParams.get("id");
+
+  if (!dataId) {
+    return validationErrorResponse(
+      "La notificación no incluye el identificador del pago (`data.id`)."
     );
   }
 
-  let body: unknown = {};
+  if (!SKIP_WEBHOOK_VALIDATION) {
+    const firma = validarFirmaWebhook({
+      xSignature: request.headers.get("x-signature"),
+      xRequestId: requestId,
+      dataId,
+    });
 
-  try {
-    const raw = await request.text();
+    if (firma.estado === "sin-configurar") {
+      console.error(
+        "MERCADOPAGO_WEBHOOK_SECRET no está configurado: no es posible verificar la autenticidad de las notificaciones."
+      );
 
-    if (raw.trim().length > 0) {
-      body = JSON.parse(raw);
+      return errorResponse(
+        new PagoError(
+          "PAYMENT_GATEWAY_NOT_CONFIGURED",
+          "El servicio de pagos no está configurado para verificar notificaciones."
+        )
+      );
     }
-  } catch {
-    // Cuerpo no parseable: se intenta continuar con lo disponible en el query.
-    body = {};
+
+    if (firma.estado === "invalida") {
+      console.warn(
+        `Firma de webhook inválida (motivo: ${firma.motivo}, data.id: ${dataId}, x-request-id: ${requestId ?? "-"}); se rechaza la notificación.`
+      );
+
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: "INVALID_SIGNATURE",
+            message: "La firma del webhook no es válida.",
+          },
+        },
+        { status: 401 }
+      );
+    }
+  } else {
+    console.warn(
+      "SKIP_WEBHOOK_VALIDATION=true: se omite la validación de firma del webhook (modo demo)."
+    );
   }
 
-  const payload = normalizarPayload(request, body);
+  if (LOG_VERBOSO) {
+    console.log("Recibida notificación de Mercado Pago:", {
+      url: request.url,
+      headers: Object.fromEntries(request.headers.entries()),
+      body: raw,
+    });
+  }
+  
+  const payload = normalizarPayload(request, raw);
 
   // Evento no procesable (no es de pago): se confirma recepción sin mutar nada.
-  if (!webhookPayloadSchema.safeParse(payload).success) {
-    console.warn("Notificación de Mercado Pago no procesable; se ignora el evento.");
-    return NextResponse.json({ received: true });
+  if (payload.type !== "payment" || !webhookPayloadSchema.safeParse(payload).success) {
+    console.warn(
+      `Notificación de Mercado Pago no procesable (type: ${payload.type ?? "-"}); se ignora el evento.`
+    );
+
+    return recibido();
   }
 
   try {
     await procesarNotificacionPago(payload);
 
-    return NextResponse.json({ received: true });
+    return recibido();
   } catch (error: unknown) {
-    // Fallo transitorio: se responde 500 para que Mercado Pago reintente.
+    // El pago no existe en la pasarela (id inválido o de otro comercio):
+    // reintentar no cambia el resultado, se acusa recibo para cortar los envíos.
+    if (error instanceof PagoError && error.code === "PAGO_NO_ENCONTRADO") {
+      console.warn(
+        `Mercado Pago no reconoce el pago ${String(payload.data?.id)}; se ignora la notificación.`
+      );
+
+      return recibido();
+    }
+
+    // Fallo transitorio: se responde error para que Mercado Pago reintente.
     // La idempotencia del módulo de pagos protege contra la duplicación.
     console.error("Fallo al procesar la notificación de Mercado Pago:", error);
 
-    return NextResponse.json(
-      {
-        success: false,
-        error: {
-          code: "INTERNAL_ERROR",
-          message: "No se pudo procesar la notificación.",
-        },
-      },
-      { status: 500 }
-    );
+    return errorResponse(error);
   }
 }

@@ -123,11 +123,26 @@ sequenceDiagram
 ### 4.2. Webhook de Notificaciones de Mercado Pago
 - **Ruta:** `POST /api/v1/webhooks/mercadopago`
 - **Descripción:** Endpoint público que recibe notificaciones de eventos (`payment.created`, `payment.updated`).
-- **Validación:** Verifica el pago directamente en la API de Mercado Pago y procesa la transacción de forma idempotente.
+- **Validación de firma:** Reconstruye el manifest `id:{data.id};request-id:{x-request-id};ts:{ts};` y lo compara (HMAC-SHA256 en tiempo constante, vía `WebhookSignatureValidator` del SDK) contra el header `x-signature` usando `MERCADOPAGO_WEBHOOK_SECRET`. **Si el secreto no está configurado se rechaza la notificación** (fail-closed): sin él no hay forma de distinguir a Mercado Pago de un tercero.
+- **Validación del pago:** Consulta inversa `GET /v1/payments/{id}` antes de mutar la base y procesa la transacción de forma idempotente.
+- **Eventos ignorados (se acusan con `200`):** notificaciones legacy de IPN (`?topic=`, `merchant_order`), eventos que no son de pago y pagos que la pasarela no reconoce (`404`, reintentar no cambia el resultado).
 - **Response `200 OK`:**
   ```json
   { "received": true }
   ```
+
+| Situación | Status | Código |
+| :--- | :--- | :--- |
+| Evento procesado, ignorado o no recuperable | `200` | — (`{ "received": true }`) |
+| Notificación sin `data.id` | `400` | `VALIDATION_ERROR` |
+| Firma inválida o ausente | `401` | `INVALID_SIGNATURE` |
+| Secreto no configurado | `500` | `PAYMENT_GATEWAY_NOT_CONFIGURED` |
+| Fallo transitorio (base caída, pasarela 5xx/timeout) | `500` / `502` | `INTERNAL_ERROR` / `PAYMENT_GATEWAY_UNAVAILABLE` |
+
+> Los `4xx` y `5xx` disparan reintentos de Mercado Pago; por eso solo se responden error ante fallos transitorios o ante una firma no verificable.
+
+**Diagnóstico:** `node scripts/verificar-firma-mp.mjs --from-log <salida-del-servidor>` recalcula la firma de las notificaciones capturadas y confirma si la clave configurada es la correcta.
+
 
 ### 4.3. Consulta de Estado de Compra
 - **Ruta:** `GET /api/v1/compras/:id/estado`
@@ -181,3 +196,18 @@ Los códigos de error de dominio llevan su status HTTP semántico asociado (`400
 1. **Conversión de `BigInt`:** Dado que en Prisma los IDs de `TransaccionCompra`, `Pago` y `Pasaje` son `BigInt`, siempre serializar a `string` (`id.toString()`) al comunicarse con Mercado Pago (`external_reference`) o enviar JSON.
 2. **Control de Concurrencia:** La verificación de cupo disponible debe realizarse dentro del bloque `prisma.$transaction` antes de crear la transacción.
 3. **Manejo de Reintentos:** Si Mercado Pago reenvía un webhook (`retry`), comprobar si ya existe un `Pago` para ese `transaccionId` o si `TransaccionCompra.estado === 'CONFIRMADA'` para evitar duplicación.
+4. **Clave secreta del webhook:** `MERCADOPAGO_WEBHOOK_SECRET` debe pertenecer a la **misma aplicación** que `MERCADOPAGO_ACCESS_TOKEN` (Tus integraciones → esa aplicación → Webhooks → Clave secreta). Si el simulador del panel valida la firma pero las compras reales no, se está usando la clave de otra aplicación: verificar con `scripts/verificar-firma-mp.mjs`. La clave se compara siempre recortada (`trim()`).
+5. **Fallar cerrado:** sin `MERCADOPAGO_WEBHOOK_SECRET` el endpoint **no** procesa notificaciones (`500 PAYMENT_GATEWAY_NOT_CONFIGURED`). Nunca degradar a aceptar eventos sin verificar.
+
+---
+
+## 6. Variables de Entorno
+
+```env
+MERCADOPAGO_ACCESS_TOKEN="TEST-..."          # o APP_USR-... en producción
+NEXT_PUBLIC_MERCADOPAGO_PUBLIC_KEY="TEST-..."
+MERCADOPAGO_WEBHOOK_SECRET="..."             # clave secreta de la MISMA aplicación
+MERCADOPAGO_WEBHOOK_VERBOSE_LOG="false"      # opcional: log detallado de cada notificación (solo diagnóstico local)
+MERCADOPAGO_WEBHOOK_TOLERANCE_SECONDS="300"  # opcional: rechaza firmas con `ts` más antiguo que N segundos
+```
+
