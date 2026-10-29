@@ -41,3 +41,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .neon
+
+# Herramientas de IA
+.agents/
+.claude/
+.windsurf/
+skills-lock.json

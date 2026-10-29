@@ -119,6 +119,8 @@ export const flightSchema = z
 export type FlightFormValues = z.output<typeof flightSchema>;
 export type FlightFormInput = z.input<typeof flightSchema>;
 
+export const flightInstanceDateSchema = z.iso.date({ error: "Seleccioná una fecha válida." });
+
 const airportCodeSchema = z
   .string()
   .trim()

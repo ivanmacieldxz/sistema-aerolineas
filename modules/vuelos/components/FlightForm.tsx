@@ -5,7 +5,7 @@ import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Plane } from "lucide-react";
 import { flightSchema, type FlightFormValues, type FlightFormInput, type AirportFormValues } from "../schemas";
-import { createFlight } from "../actions";
+import { createFlight, updateFlightAction } from "../actions";
 import { AirportForm } from "./AirportForm";
 
 const diasSemanaMap = [
@@ -18,17 +18,78 @@ const diasSemanaMap = [
   { id: 7, name: "Domingo" },
 ];
 
+type FlightFormInitialValues = Partial<{
+  numeroVuelo: string;
+  origenIata: string;
+  destinoIata: string;
+  horaSalida: string | Date;
+  horaLlegada: string | Date;
+  vigenciaDesde: string | Date;
+  vigenciaHasta: string | Date;
+  capacidadEconomy: number;
+  precioEconomy: number;
+  capacidadPrimera: number;
+  precioPrimera: number;
+  diasSemana: number[];
+}>;
+
 type FlightFormProps = {
   initialAirports?: { iataCode: string; nombre: string; ciudad: string }[];
   onFlightCreated?: () => void;
+  mode?: "create" | "edit";
+  flightId?: string;
+  initialValues?: FlightFormInitialValues;
+  onFlightUpdated?: () => void;
 };
 
-export function FlightForm({ initialAirports = [], onFlightCreated }: FlightFormProps) {
+const toInputTime = (value: Date | string | undefined): string => {
+  if (!value) return "";
+  if (typeof value === "string") {
+    return /^\d{2}:\d{2}$/.test(value) ? value : "";
+  }
+  return Number.isNaN(value.getTime()) ? "" : value.toISOString().slice(11, 16);
+};
+
+const toInputDate = (value: Date | string | undefined): string => {
+  if (!value) return "";
+  if (typeof value === "string") {
+    return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : "";
+  }
+  return Number.isNaN(value.getTime()) ? "" : value.toISOString().slice(0, 10);
+};
+
+export function FlightForm({
+  initialAirports = [],
+  onFlightCreated,
+  mode = "create",
+  flightId,
+  initialValues,
+  onFlightUpdated,
+}: FlightFormProps) {
   const [airports, setAirports] = useState(initialAirports);
   const [showAddAirport, setShowAddAirport] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
   const [serverSuccess, setServerSuccess] = useState<string | null>(null);
+
+  const defaultValues: Partial<FlightFormInput> = mode === "edit" && initialValues
+    ? {
+        numeroVuelo: initialValues.numeroVuelo ?? "",
+        origenIata: initialValues.origenIata ?? "",
+        destinoIata: initialValues.destinoIata ?? "",
+        horaSalida: toInputTime(initialValues.horaSalida),
+        horaLlegada: toInputTime(initialValues.horaLlegada),
+        vigenciaDesde: toInputDate(initialValues.vigenciaDesde) as unknown as Date,
+        vigenciaHasta: toInputDate(initialValues.vigenciaHasta) as unknown as Date,
+        capacidadEconomy: initialValues.capacidadEconomy ?? 0,
+        precioEconomy: initialValues.precioEconomy ?? 0,
+        capacidadPrimera: initialValues.capacidadPrimera ?? 0,
+        precioPrimera: initialValues.precioPrimera ?? 0,
+        diasSemana: initialValues.diasSemana ?? [],
+      }
+    : {
+        diasSemana: [],
+      };
 
   const {
     register,
@@ -39,9 +100,7 @@ export function FlightForm({ initialAirports = [], onFlightCreated }: FlightForm
     formState: { errors },
   } = useForm<FlightFormInput, unknown, FlightFormValues>({
     resolver: zodResolver(flightSchema),
-    defaultValues: {
-      diasSemana: [],
-    },
+    defaultValues,
   });
 
   const capacidadPrimeraValue = useWatch({ control, name: "capacidadPrimera" });
@@ -49,6 +108,14 @@ export function FlightForm({ initialAirports = [], onFlightCreated }: FlightForm
 
   const capacidadEconomyValue = useWatch({ control, name: "capacidadEconomy" });
   const isEconomyEnabled = Number(capacidadEconomyValue || 0) > 0;
+
+  const selectedDays = useWatch({ control, name: "diasSemana" }) ?? [];
+
+  useEffect(() => {
+    if (mode === "edit" && initialValues?.diasSemana) {
+      setValue("diasSemana", initialValues.diasSemana, { shouldValidate: true });
+    }
+  }, [mode, initialValues, setValue]);
 
   useEffect(() => {
     if (!isPrimeraEnabled) {
@@ -79,13 +146,18 @@ export function FlightForm({ initialAirports = [], onFlightCreated }: FlightForm
     setServerError(null);
     setServerSuccess(null);
 
-    const result = await createFlight(data);
+    const result =
+      mode === "edit" && flightId
+        ? await updateFlightAction(flightId, data)
+        : await createFlight(data);
 
     if (result.success) {
       setServerSuccess(result.message);
-      reset();
-      if (onFlightCreated) {
-        onFlightCreated();
+      if (mode === "edit") {
+        onFlightUpdated?.();
+      } else {
+        reset();
+        onFlightCreated?.();
       }
     } else {
       setServerError(result.message);
@@ -142,61 +214,72 @@ export function FlightForm({ initialAirports = [], onFlightCreated }: FlightForm
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Origen */}
-          <div>
-            <label className="block text-sm font-medium text-ink">Aeropuerto de Origen</label>
-            {airports.length > 0 ? (
-              <select {...register("origenIata")} className={inputClass}>
-                <option value="">Seleccioná un aeropuerto</option>
-                {airports.map((ap) => (
-                  <option key={ap.iataCode} value={ap.iataCode}>
-                    {ap.ciudad} · {ap.iataCode} ({ap.nombre})
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input
-                {...register("origenIata")}
-                className={inputClass}
-                placeholder="Código IATA (ej: EZE)"
-                maxLength={3}
-              />
-            )}
-            <div className="h-6 mt-1">
-              <p className="text-danger text-xs leading-tight whitespace-pre-line">
-                {errors.origenIata?.message?.toString()}
-              </p>
-            </div>
+        {mode === "edit" ? (
+          <div className="rounded-lg border border-line bg-soft p-4 text-sm text-muted">
+            <p className="font-medium text-ink">Ruta del vuelo</p>
+            <p className="mt-1">
+              {initialValues?.origenIata} → {initialValues?.destinoIata}
+            </p>
+            <input type="hidden" {...register("origenIata")} />
+            <input type="hidden" {...register("destinoIata")} />
           </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Origen */}
+            <div>
+              <label className="block text-sm font-medium text-ink">Aeropuerto de Origen</label>
+              {airports.length > 0 ? (
+                <select {...register("origenIata")} className={inputClass}>
+                  <option value="">Seleccioná un aeropuerto</option>
+                  {airports.map((ap) => (
+                    <option key={ap.iataCode} value={ap.iataCode}>
+                      {ap.ciudad} · {ap.iataCode} ({ap.nombre})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  {...register("origenIata")}
+                  className={inputClass}
+                  placeholder="Código IATA (ej: EZE)"
+                  maxLength={3}
+                />
+              )}
+              <div className="h-6 mt-1">
+                <p className="text-danger text-xs leading-tight whitespace-pre-line">
+                  {errors.origenIata?.message?.toString()}
+                </p>
+              </div>
+            </div>
 
-          {/* Destino */}
-          <div>
-            <label className="block text-sm font-medium text-ink">Aeropuerto de Destino</label>
-            {airports.length > 0 ? (
-              <select {...register("destinoIata")} className={inputClass}>
-                <option value="">Seleccioná un aeropuerto</option>
-                {airports.map((ap) => (
-                  <option key={ap.iataCode} value={ap.iataCode}>
-                    {ap.ciudad} · {ap.iataCode} ({ap.nombre})
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input
-                {...register("destinoIata")}
-                className={inputClass}
-                placeholder="Código IATA (ej: COR)"
-                maxLength={3}
-              />
-            )}
-            <div className="h-6 mt-1">
-              <p className="text-danger text-xs leading-tight whitespace-pre-line">
-                {errors.destinoIata?.message?.toString()}
-              </p>
+            {/* Destino */}
+            <div>
+              <label className="block text-sm font-medium text-ink">Aeropuerto de Destino</label>
+              {airports.length > 0 ? (
+                <select {...register("destinoIata")} className={inputClass}>
+                  <option value="">Seleccioná un aeropuerto</option>
+                  {airports.map((ap) => (
+                    <option key={ap.iataCode} value={ap.iataCode}>
+                      {ap.ciudad} · {ap.iataCode} ({ap.nombre})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  {...register("destinoIata")}
+                  className={inputClass}
+                  placeholder="Código IATA (ej: COR)"
+                  maxLength={3}
+                />
+              )}
+              <div className="h-6 mt-1">
+                <p className="text-danger text-xs leading-tight whitespace-pre-line">
+                  {errors.destinoIata?.message?.toString()}
+                </p>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Hora Salida */}
@@ -342,17 +425,30 @@ export function FlightForm({ initialAirports = [], onFlightCreated }: FlightForm
         <div>
           <label className="block text-sm font-medium text-ink mb-2">Días de Operación</label>
           <div className="flex flex-wrap gap-4">
-            {diasSemanaMap.map((dia) => (
-              <label key={dia.id} className="flex items-center space-x-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  value={dia.id}
-                  {...register("diasSemana")}
-                  className="h-4 w-4 rounded border-line-strong bg-surface text-accent focus:ring-accent"
-                />
-                <span className="text-sm text-ink transition-colors hover:text-accent">{dia.name}</span>
-              </label>
-            ))}
+            {diasSemanaMap.map((dia) => {
+              const dayValue = Number(dia.id);
+              const checked = Array.isArray(selectedDays) && selectedDays.includes(dayValue);
+
+              return (
+                <label key={dia.id} className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    value={dayValue}
+                    checked={checked}
+                    onChange={(event) => {
+                      const current = Array.isArray(selectedDays) ? [...selectedDays] : [];
+                      const next = event.target.checked
+                        ? Array.from(new Set([...current, dayValue]))
+                        : current.filter((value) => value !== dayValue);
+
+                      setValue("diasSemana", next, { shouldValidate: true, shouldDirty: true });
+                    }}
+                    className="h-4 w-4 rounded border-line-strong bg-surface text-accent focus:ring-accent"
+                  />
+                  <span className="text-sm text-ink transition-colors hover:text-accent">{dia.name}</span>
+                </label>
+              );
+            })}
           </div>
           <div className="h-6 mt-1">
             <p className="text-danger text-xs leading-tight whitespace-pre-line">
@@ -384,7 +480,13 @@ export function FlightForm({ initialAirports = [], onFlightCreated }: FlightForm
             className="inline-flex h-12 items-center justify-center gap-2 rounded-md bg-action px-6 text-sm font-semibold text-white transition-colors hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-action disabled:opacity-50"
           >
             <Plane size={18} />
-            {isSubmitting ? "Creando y programando salidas..." : "Crear Vuelo y Generar Salidas"}
+            {isSubmitting
+              ? mode === "edit"
+                ? "Guardando cambios..."
+                : "Creando y programando salidas..."
+              : mode === "edit"
+                ? "Guardar cambios"
+                : "Crear Vuelo y Generar Salidas"}
           </button>
         </div>
       </form>
