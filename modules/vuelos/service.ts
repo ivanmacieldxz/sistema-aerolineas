@@ -490,6 +490,116 @@ export async function getFlightById(id: bigint) {
   });
 }
 
+export type PassengerLookupFlightInstance = {
+  id: string;
+  fechaSalida: string;
+  estado: string;
+  pasajeros: Array<{
+    codigo: string;
+    nombre: string;
+    apellido: string;
+    documento: string;
+    clase: string;
+    asiento: string | null;
+    estado: string;
+  }>;
+};
+
+export type PassengerLookupFlight = {
+  id: string;
+  numeroVuelo: string;
+  origenIata: string;
+  destinoIata: string;
+  origenCiudad: string;
+  destinoCiudad: string;
+  horaSalida: Date;
+  horaLlegada: Date;
+  instancias: PassengerLookupFlightInstance[];
+};
+
+export async function searchFlightsForPassengerLookup(params: {
+  numeroVuelo?: string;
+  origen?: string;
+  destino?: string;
+  fecha?: string;
+}): Promise<PassengerLookupFlight[]> {
+  const numeroVuelo = params.numeroVuelo?.trim();
+  const origen = params.origen?.trim().toUpperCase();
+  const destino = params.destino?.trim().toUpperCase();
+  const fecha = params.fecha ? new Date(`${params.fecha}T00:00:00.000Z`) : undefined;
+  const vueloId = numeroVuelo && /^\d+$/.test(numeroVuelo) ? BigInt(numeroVuelo) : undefined;
+
+  const flights = await prisma.vuelo.findMany({
+    where: {
+      deleted: false,
+      activo: true,
+      ...(vueloId ? { id: vueloId } : numeroVuelo ? { numeroVuelo: { contains: numeroVuelo, mode: "insensitive" } } : {}),
+      ...(origen ? { origenIata: origen } : {}),
+      ...(destino ? { destinoIata: destino } : {}),
+    },
+    include: {
+      origen: true,
+      destino: true,
+      instancias: {
+        where: {
+          deleted: false,
+          ...(fecha ? { fechaSalida: fecha } : {}),
+        },
+        orderBy: { fechaSalida: "asc" },
+        include: {
+          pasajes: {
+            where: {
+              estado: { in: ["EMITIDO", "CHECK_IN"] },
+            },
+            orderBy: [{ pasajeroApellido: "asc" }, { pasajeroNombre: "asc" }],
+            select: {
+              codigo: true,
+              clase: true,
+              pasajeroNombre: true,
+              pasajeroApellido: true,
+              pasajeroDocumento: true,
+              numeroAsiento: true,
+              estado: true,
+            },
+          },
+        },
+      },
+    },
+    orderBy: { numeroVuelo: "asc" },
+  });
+
+  return flights.flatMap((vuelo) => {
+    const instancias = vuelo.instancias.map((instancia) => ({
+      id: instancia.id.toString(),
+      fechaSalida: instancia.fechaSalida.toISOString().slice(0, 10),
+      estado: instancia.estado,
+      pasajeros: instancia.pasajes.map((pasaje) => ({
+        codigo: pasaje.codigo.toString(),
+        nombre: pasaje.pasajeroNombre,
+        apellido: pasaje.pasajeroApellido,
+        documento: pasaje.pasajeroDocumento,
+        clase: pasaje.clase,
+        asiento: pasaje.numeroAsiento,
+        estado: pasaje.estado,
+      })),
+    }));
+
+    return instancias.length > 0 || fecha
+      ? [{
+          id: vuelo.id.toString(),
+          numeroVuelo: vuelo.numeroVuelo,
+          origenIata: vuelo.origenIata,
+          destinoIata: vuelo.destinoIata,
+          origenCiudad: vuelo.origen.ciudad,
+          destinoCiudad: vuelo.destino.ciudad,
+          horaSalida: vuelo.horaSalida,
+          horaLlegada: vuelo.horaLlegada,
+          instancias,
+        }]
+      : [];
+  });
+}
+
 export async function getFlightInstancesByDate(fechaSalida: Date): Promise<AdminFlightInstance[]> {
   const instances = await prisma.instanciaVuelo.findMany({
     where: {

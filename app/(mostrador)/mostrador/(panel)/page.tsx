@@ -1,3 +1,6 @@
+import Link from "next/link";
+import { ArrowRight } from "lucide-react";
+
 export default function MostradorPage() {
   return (
     <div className="flex flex-col gap-6">
@@ -15,12 +18,26 @@ export default function MostradorPage() {
       </header>
 
       <ul className="grid gap-4 sm:grid-cols-2">
+        <li className="rounded-lg border border-line bg-surface p-5 transition-colors hover:border-accent">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold">Lista de pasajeros por vuelos</h2>
+              <p className="mt-1 text-sm leading-6 text-muted">
+                Consultá quiénes viajan en un vuelo concreto por número, fecha,
+                origen o destino.
+              </p>
+            </div>
+            <Link
+              href="/mostrador/pasajeros"
+              className="inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline"
+            >
+              Consultar
+              <ArrowRight size={14} />
+            </Link>
+          </div>
+        </li>
+
         {[
-          {
-            titulo: "Búsqueda de pasajeros",
-            detalle:
-              "Localización por documento de identidad o código de pasaje.",
-          },
           {
             titulo: "Check-in",
             detalle:
@@ -48,11 +65,6 @@ export default function MostradorPage() {
           </li>
         ))}
       </ul>
-
-      <p className="rounded-lg border border-dashed border-line-strong px-4 py-3 text-sm text-muted">
-        Placeholder: la terminal de mostrador completa se implementará en una
-        iteración posterior.
-      </p>
     </div>
   );
 }
