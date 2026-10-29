@@ -79,7 +79,7 @@ export default async function VuelosDashboardPage({
           </div>
         </div>
 
-        <FlightList flights={flights} />
+        <FlightList flights={flights} initialAirports={airports} />
       </section>
 
       <section className="space-y-4">

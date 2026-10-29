@@ -10,6 +10,7 @@ import {
   softDeleteFlight,
   cancelFlightInstance,
   FlightInstanceCancellationError,
+  updateFlightById,
 } from "./service";
 
 type ActionResponse = {
@@ -46,6 +47,45 @@ export async function createFlight(data: FlightFormValues): Promise<ActionRespon
     };
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : "No se pudo crear el vuelo.";
+    return {
+      success: false,
+      message: errorMessage,
+    };
+  }
+}
+
+export async function updateFlightAction(
+  vueloIdStr: string,
+  data: FlightFormValues
+): Promise<ActionResponse> {
+  const validationResult = flightSchema.safeParse(data);
+
+  if (!validationResult.success) {
+    const fieldErrors = validationResult.error.flatten().fieldErrors;
+    const firstIssue = validationResult.error.issues[0];
+    const firstKey = firstIssue?.path.join(".");
+    const firstError = firstIssue?.message ?? "Revisa los campos.";
+
+    return {
+      success: false,
+      message: `Error de validación: ${firstError} (Campo: ${firstKey})`,
+      errors: fieldErrors,
+    };
+  }
+
+  try {
+    const vueloId = BigInt(vueloIdStr);
+    await updateFlightById(vueloId, validationResult.data);
+
+    revalidatePath("/admin/vuelos");
+    revalidatePath("/vuelos");
+
+    return {
+      success: true,
+      message: "El vuelo se actualizó exitosamente.",
+    };
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : "No se pudo actualizar el vuelo.";
     return {
       success: false,
       message: errorMessage,
