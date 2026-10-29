@@ -30,6 +30,28 @@ export type FlightInstanceSearchResult = {
   estado: string;
 };
 
+export type FlightClassOccupancySummary = {
+  capacidad: number;
+  vendidos: number;
+  disponibles: number;
+  ocupacion: number;
+};
+
+export type FlightOccupancyReportRow = {
+  vueloId: string;
+  numeroVuelo: string;
+  origenIata: string;
+  destinoIata: string;
+  origenCiudad: string;
+  destinoCiudad: string;
+  totalCapacidad: number;
+  totalVendidos: number;
+  totalDisponibles: number;
+  ocupacionTotal: number;
+  economy: FlightClassOccupancySummary;
+  primera: FlightClassOccupancySummary;
+};
+
 export type AdminFlightInstance = {
   id: string;
   fechaSalida: string;
@@ -525,6 +547,127 @@ export async function getFlightInstancesByDate(fechaSalida: Date): Promise<Admin
         departureAt > now && ["PROGRAMADO", "DEMORADO"].includes(instance.estado),
     };
   });
+}
+
+export async function getFlightOccupancyReport(filters?: {
+  desde?: Date;
+  hasta?: Date;
+}): Promise<FlightOccupancyReportRow[]> {
+  const rangeFrom = filters?.desde
+    ? new Date(filters.desde)
+    : new Date(Date.now());
+  const rangeTo = filters?.hasta
+    ? new Date(filters.hasta)
+    : new Date(rangeFrom);
+
+  const start = new Date(Date.UTC(rangeFrom.getUTCFullYear(), rangeFrom.getUTCMonth(), rangeFrom.getUTCDate()));
+  const end = new Date(Date.UTC(rangeTo.getUTCFullYear(), rangeTo.getUTCMonth(), rangeTo.getUTCDate(), 23, 59, 59, 999));
+
+  const instances = await prisma.instanciaVuelo.findMany({
+    where: {
+      deleted: false,
+      estado: { not: "CANCELADO" },
+      fechaSalida: {
+        gte: start,
+        lte: end,
+      },
+      vuelo: {
+        activo: true,
+        deleted: false,
+      },
+    },
+    include: {
+      vuelo: {
+        select: {
+          id: true,
+          numeroVuelo: true,
+          origenIata: true,
+          destinoIata: true,
+          capacidadEconomy: true,
+          capacidadPrimera: true,
+          origen: { select: { ciudad: true } },
+          destino: { select: { ciudad: true } },
+        },
+      },
+      pasajes: {
+        where: {
+          estado: { in: ["EMITIDO", "CHECK_IN"] },
+        },
+        select: { clase: true },
+      },
+    },
+    orderBy: {
+      vuelo: {
+        numeroVuelo: "asc",
+      },
+    },
+  });
+
+  const reportByFlight = new Map<string, FlightOccupancyReportRow>();
+
+  for (const instance of instances) {
+    const vueloId = instance.vuelo.id.toString();
+    const current = reportByFlight.get(vueloId) ?? {
+      vueloId,
+      numeroVuelo: instance.vuelo.numeroVuelo,
+      origenIata: instance.vuelo.origenIata,
+      destinoIata: instance.vuelo.destinoIata,
+      origenCiudad: instance.vuelo.origen.ciudad,
+      destinoCiudad: instance.vuelo.destino.ciudad,
+      totalCapacidad: 0,
+      totalVendidos: 0,
+      totalDisponibles: 0,
+      ocupacionTotal: 0,
+      economy: { capacidad: 0, vendidos: 0, disponibles: 0, ocupacion: 0 },
+      primera: { capacidad: 0, vendidos: 0, disponibles: 0, ocupacion: 0 },
+    };
+
+    const economyCapacity = Number(instance.vuelo.capacidadEconomy ?? 0);
+    const primeraCapacity = Number(instance.vuelo.capacidadPrimera ?? 0);
+    const economySold = instance.pasajes.filter((pasaje) => pasaje.clase === "ECONOMY").length;
+    const primeraSold = instance.pasajes.filter((pasaje) => pasaje.clase === "PRIMERA").length;
+
+    current.economy.capacidad += economyCapacity;
+    current.economy.vendidos += economySold;
+    current.economy.disponibles += Math.max(0, economyCapacity - economySold);
+
+    current.primera.capacidad += primeraCapacity;
+    current.primera.vendidos += primeraSold;
+    current.primera.disponibles += Math.max(0, primeraCapacity - primeraSold);
+
+    current.totalCapacidad += economyCapacity + primeraCapacity;
+    current.totalVendidos += economySold + primeraSold;
+    current.totalDisponibles += Math.max(0, economyCapacity - economySold) + Math.max(0, primeraCapacity - primeraSold);
+
+    reportByFlight.set(vueloId, current);
+  }
+
+  return Array.from(reportByFlight.values())
+    .map((entry) => {
+      const economyOcupacion = entry.economy.capacidad > 0
+        ? (entry.economy.vendidos / entry.economy.capacidad) * 100
+        : 0;
+      const primeraOcupacion = entry.primera.capacidad > 0
+        ? (entry.primera.vendidos / entry.primera.capacidad) * 100
+        : 0;
+      const ocupacionTotal = entry.totalCapacidad > 0
+        ? (entry.totalVendidos / entry.totalCapacidad) * 100
+        : 0;
+
+      return {
+        ...entry,
+        ocupacionTotal,
+        economy: {
+          ...entry.economy,
+          ocupacion: economyOcupacion,
+        },
+        primera: {
+          ...entry.primera,
+          ocupacion: primeraOcupacion,
+        },
+      };
+    })
+    .sort((a, b) => a.numeroVuelo.localeCompare(b.numeroVuelo));
 }
 
 export async function cancelFlightInstance(instanciaId: bigint): Promise<number> {
