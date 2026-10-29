@@ -226,6 +226,8 @@ export async function updateFlightById(vueloId: bigint, data: FlightFormValues) 
       select: { id: true, fechaSalida: true, estado: true, deleted: true },
     });
 
+    const instanciasEliminadas = instanciasExistentes.filter((instancia) => instancia.deleted);
+
     const instanciasExistentesKey = new Set(
       instanciasExistentes.map((instancia) =>
         new Date(Date.UTC(
@@ -240,8 +242,17 @@ export async function updateFlightById(vueloId: bigint, data: FlightFormValues) 
       (fecha) => !instanciasExistentesKey.has(new Date(Date.UTC(fecha.getUTCFullYear(), fecha.getUTCMonth(), fecha.getUTCDate())).toISOString())
     );
 
-    const fechasAEliminar = instanciasExistentes.filter(
-      (instancia) => !fechasDeseadasKey.has(new Date(Date.UTC(
+    const fechasAEliminar = instanciasExistentes.filter((instancia) => {
+      if (instancia.deleted) return false;
+      return !fechasDeseadasKey.has(new Date(Date.UTC(
+        instancia.fechaSalida.getUTCFullYear(),
+        instancia.fechaSalida.getUTCMonth(),
+        instancia.fechaSalida.getUTCDate()
+      )).toISOString());
+    });
+
+    const fechasReactivadas = instanciasEliminadas.filter((instancia) =>
+      fechasDeseadasKey.has(new Date(Date.UTC(
         instancia.fechaSalida.getUTCFullYear(),
         instancia.fechaSalida.getUTCMonth(),
         instancia.fechaSalida.getUTCDate()
@@ -271,6 +282,20 @@ export async function updateFlightById(vueloId: bigint, data: FlightFormValues) 
       },
     });
 
+    if (fechasReactivadas.length > 0) {
+      await Promise.all(
+        fechasReactivadas.map((instancia) =>
+          tx.instanciaVuelo.update({
+            where: { id: instancia.id },
+            data: {
+              deleted: false,
+              estado: instancia.estado === "CANCELADO" ? "PROGRAMADO" : instancia.estado,
+            },
+          })
+        )
+      );
+    }
+
     if (nuevasFechas.length > 0) {
       await tx.instanciaVuelo.createMany({
         data: nuevasFechas.map((fecha) => ({
@@ -279,11 +304,12 @@ export async function updateFlightById(vueloId: bigint, data: FlightFormValues) 
           estado: "PROGRAMADO",
           deleted: false,
         })),
+        skipDuplicates: true,
       });
     }
 
     for (const instancia of fechasAEliminar) {
-      if (instancia.estado === "CANCELADO" || instancia.deleted) {
+      if (instancia.estado === "CANCELADO") {
         continue;
       }
 
