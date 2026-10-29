@@ -58,7 +58,7 @@ export default async function VuelosDashboardPage() {
           </div>
         </div>
 
-        <FlightList flights={flights} />
+        <FlightList flights={flights} initialAirports={airports} />
       </section>
     </div>
   );

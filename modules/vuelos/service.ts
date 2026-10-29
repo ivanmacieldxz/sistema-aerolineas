@@ -148,6 +148,155 @@ export async function createFlightWithBatchInstances(data: FlightFormValues) {
   });
 }
 
+async function contarPasajesActivosPorClase(vueloId: bigint, clase: "ECONOMY" | "PRIMERA") {
+  return prisma.pasaje.count({
+    where: {
+      clase,
+      estado: { in: ["EMITIDO", "CHECK_IN"] },
+      instanciaVuelo: {
+        vueloId,
+        deleted: false,
+      },
+      ...filtroPasajeOcupaCupo(),
+    },
+  });
+}
+
+export async function updateFlightById(vueloId: bigint, data: FlightFormValues) {
+  const vueloActual = await prisma.vuelo.findFirst({
+    where: { id: vueloId, deleted: false },
+    include: { diasSemana: true },
+  });
+
+  if (!vueloActual) {
+    throw new Error("El vuelo indicado no existe o fue dado de baja.");
+  }
+
+  const vueloConMismoNumero = await prisma.vuelo.findUnique({
+    where: { numeroVuelo: data.numeroVuelo },
+  });
+
+  if (vueloConMismoNumero && vueloConMismoNumero.id !== vueloId) {
+    throw new Error(`Ya existe otro vuelo con el número "${data.numeroVuelo}".`);
+  }
+
+  const ocupadosEconomy = await contarPasajesActivosPorClase(vueloId, "ECONOMY");
+  const ocupadosPrimera = await contarPasajesActivosPorClase(vueloId, "PRIMERA");
+
+  if (data.capacidadEconomy < ocupadosEconomy) {
+    throw new Error(
+      `La capacidad de Economy no puede quedar por debajo de los pasajes ya vendidos (${ocupadosEconomy}).`
+    );
+  }
+
+  if (data.capacidadPrimera < ocupadosPrimera) {
+    throw new Error(
+      `La capacidad de Primera no puede quedar por debajo de los pasajes ya vendidos (${ocupadosPrimera}).`
+    );
+  }
+
+  const horaSalidaDate = parseTimeStringToDate(data.horaSalida);
+  const horaLlegadaDate = parseTimeStringToDate(data.horaLlegada);
+  const fechasDeseadas = generarFechasPorDias(
+    data.vigenciaDesde,
+    data.vigenciaHasta,
+    data.diasSemana
+  );
+  const fechasDeseadasKey = new Set(
+    fechasDeseadas.map((fecha) => new Date(Date.UTC(fecha.getUTCFullYear(), fecha.getUTCMonth(), fecha.getUTCDate())).toISOString())
+  );
+
+  return prisma.$transaction(async (tx) => {
+    const instanciasExistentes = await tx.instanciaVuelo.findMany({
+      where: { vueloId },
+      select: { id: true, fechaSalida: true, estado: true, deleted: true },
+    });
+
+    const instanciasExistentesKey = new Set(
+      instanciasExistentes.map((instancia) =>
+        new Date(Date.UTC(
+          instancia.fechaSalida.getUTCFullYear(),
+          instancia.fechaSalida.getUTCMonth(),
+          instancia.fechaSalida.getUTCDate()
+        )).toISOString()
+      )
+    );
+
+    const nuevasFechas = fechasDeseadas.filter(
+      (fecha) => !instanciasExistentesKey.has(new Date(Date.UTC(fecha.getUTCFullYear(), fecha.getUTCMonth(), fecha.getUTCDate())).toISOString())
+    );
+
+    const fechasAEliminar = instanciasExistentes.filter(
+      (instancia) => !fechasDeseadasKey.has(new Date(Date.UTC(
+        instancia.fechaSalida.getUTCFullYear(),
+        instancia.fechaSalida.getUTCMonth(),
+        instancia.fechaSalida.getUTCDate()
+      )).toISOString())
+    );
+
+    await tx.vueloDiaSemana.deleteMany({
+      where: { vueloId },
+    });
+
+    const vueloActualizado = await tx.vuelo.update({
+      where: { id: vueloId },
+      data: {
+        numeroVuelo: data.numeroVuelo,
+        horaSalida: horaSalidaDate,
+        horaLlegada: horaLlegadaDate,
+        vigenciaDesde: data.vigenciaDesde,
+        vigenciaHasta: data.vigenciaHasta,
+        capacidadEconomy: data.capacidadEconomy,
+        capacidadPrimera: data.capacidadPrimera,
+        precioEconomy: data.precioEconomy,
+        precioPrimera: data.precioPrimera,
+        activo: true,
+        diasSemana: {
+          create: data.diasSemana.map((dia) => ({ diaSemana: dia })),
+        },
+      },
+    });
+
+    if (nuevasFechas.length > 0) {
+      await tx.instanciaVuelo.createMany({
+        data: nuevasFechas.map((fecha) => ({
+          vueloId,
+          fechaSalida: fecha,
+          estado: "PROGRAMADO",
+          deleted: false,
+        })),
+      });
+    }
+
+    for (const instancia of fechasAEliminar) {
+      if (instancia.estado === "CANCELADO" || instancia.deleted) {
+        continue;
+      }
+
+      const tienePasajesActivos = await tx.pasaje.count({
+        where: {
+          instanciaVueloId: instancia.id,
+          estado: { in: ["EMITIDO", "CHECK_IN"] },
+        },
+      });
+
+      if (tienePasajesActivos > 0) {
+        await tx.instanciaVuelo.update({
+          where: { id: instancia.id },
+          data: { estado: "CANCELADO", deleted: false },
+        });
+      } else {
+        await tx.instanciaVuelo.update({
+          where: { id: instancia.id },
+          data: { deleted: true },
+        });
+      }
+    }
+
+    return vueloActualizado;
+  });
+}
+
 /** Instancia de vuelo con su vuelo, aeropuertos y pasajes que ocupan cupo. */
 type InstanciaVueloConPasajes = Prisma.InstanciaVueloGetPayload<{
   include: {
@@ -282,7 +431,7 @@ export async function getInstanciaVueloDetalle(
  * Obtiene todos los vuelos configurados para el panel de administración.
  */
 export async function getAllFlights() {
-  return prisma.vuelo.findMany({
+  const flights = await prisma.vuelo.findMany({
     where: { deleted: false },
     include: {
       origen: true,
@@ -296,6 +445,12 @@ export async function getAllFlights() {
     },
     orderBy: { numeroVuelo: "asc" },
   });
+
+  return flights.map((flight) => ({
+    ...flight,
+    precioEconomy: Number(flight.precioEconomy),
+    precioPrimera: Number(flight.precioPrimera),
+  }));
 }
 
 /**
