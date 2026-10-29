@@ -11,6 +11,7 @@ import {
   AlertCircle,
   CheckCircle2,
   Clock3,
+  Download,
   Loader2,
   RefreshCw,
   XCircle,
@@ -83,7 +84,10 @@ function leerInstanciaEnServidor(): string | null {
 
 function Tarjeta({ children }: { children: ReactNode }) {
   return (
-    <div className="rounded-lg border border-line bg-surface p-6 text-center sm:p-8">
+    <div
+      suppressHydrationWarning
+      className="rounded-lg border border-line bg-surface p-6 text-center sm:p-8"
+    >
       {children}
     </div>
   );
@@ -197,7 +201,6 @@ export function ResultadoPago({
       </Tarjeta>
     );
   }
-  console.log("Estado de la transacción:", estado);
   if (estado?.estado === "CONFIRMADA") {
     return (
       <Tarjeta>
@@ -226,6 +229,16 @@ export function ResultadoPago({
                 {formatFare(estado.factura.total)}
               </span>
             </div>
+            <div className="mt-3 border-t border-line pt-2 text-right">
+              <a
+                href={`/api/v1/compras/${estado.transaccionId}/factura/pdf`}
+                download={`Factura-${estado.factura.numeroFactura}.pdf`}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-action hover:underline"
+              >
+                <Download size={14} aria-hidden="true" />
+                Descargar Factura (PDF)
+              </a>
+            </div>
           </div>
         )}
 
@@ -248,6 +261,16 @@ export function ResultadoPago({
                   ? ` · Asiento ${pasaje.numeroAsiento}`
                   : ""}
               </p>
+              <div className="mt-3 border-t border-line pt-2 text-right">
+                <a
+                  href={`/api/v1/pasajes/${pasaje.codigo}/pdf`}
+                  download={`Pasaje-${pasaje.pasajero}-${pasaje.codigo}.pdf`}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-action hover:underline"
+                >
+                  <Download size={14} aria-hidden="true" />
+                  Descargar Pase de Abordaje (PDF)
+                </a>
+              </div>
             </div>
           ))}
         </div>

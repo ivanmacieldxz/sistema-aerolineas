@@ -15,12 +15,15 @@ export function parseTimeStringToDate(timeString: string): Date {
 /**
  * Formatea una fecha o Date para visualización de hora (HH:mm) en formato UTC.
  */
-export function formatTime(value: Date): string {
-  return new Intl.DateTimeFormat("es-AR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "UTC",
-  }).format(value);
+export function formatTime(fecha: Date | string): string {
+  return new Date(fecha)
+    .toLocaleTimeString("es-AR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+      timeZone: "America/Argentina/Buenos_Aires",
+    })
+    .replace(/\u00A0/g, " ");
 }
 
 /**
@@ -32,6 +35,20 @@ export function formatDate(value: string | Date): string {
     weekday: "long",
     day: "numeric",
     month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(dateObj);
+}
+
+/**
+ * Formatea una fecha ISO o Date en formato compacto DD/MM/AAAA, apto para
+ * documentos impresos donde el espacio horizontal es limitado.
+ */
+export function formatDateShort(value: string | Date): string {
+  const dateObj = typeof value === "string" ? new Date(`${value}T00:00:00.000Z`) : value;
+  return new Intl.DateTimeFormat("es-AR", {
+    day: "2-digit",
+    month: "2-digit",
     year: "numeric",
     timeZone: "UTC",
   }).format(dateObj);
@@ -52,7 +69,9 @@ export function formatFare(value: NumericValue): string {
     style: "currency",
     currency: "ARS",
     maximumFractionDigits: 2,
-  }).format(numValue);
+  })
+    .format(numValue)
+    .replace(/[\u00A0\u202F]/g, " ");
 }
 
 /**

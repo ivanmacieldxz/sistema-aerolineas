@@ -9,7 +9,6 @@ import {
   Loader2,
   Minus,
   Plus,
-  ShieldCheck,
   Ticket,
 } from "lucide-react";
 import { iniciarCompra } from "@/modules/pagos/actions";

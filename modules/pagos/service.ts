@@ -3,7 +3,9 @@ import { prisma } from "@/lib/prisma";
 import {
   crearTransaccionConPasajes,
   cancelarTransaccionPendiente,
+  reactivarPasajesDeTransaccion,
 } from "@/modules/pasajes/service";
+import { enviarComprobantesCompra } from "@/modules/notificaciones";
 import { getPaymentClient, getPreferenceClient } from "./client";
 import { PagoError } from "./errors";
 import type { PreferenciaRequest, WebhookPayload } from "./schemas";
@@ -12,6 +14,17 @@ import type { PreferenciaRequest, WebhookPayload } from "./schemas";
 const CURRENCY_ID = "ARS";
 
 type EstadoPago = "APROBADO" | "RECHAZADO" | "PENDIENTE";
+
+export type ResultadoNotificacionPago = {
+  processed: boolean;
+  estado?: EstadoPago;
+  yaProcesado?: boolean;
+  /**
+   * El pago fue aprobado, pero no se pudo emitir porque el vuelo o el cupo ya
+   * no están disponibles. Requiere intervención manual (p. ej. reembolso).
+   */
+  emisionBloqueada?: boolean;
+};
 
 type Facturacion = {
   tipoFactura: "A" | "B" | "C";
@@ -75,6 +88,27 @@ function construirNumeroFactura(tipo: "A" | "B" | "C", transaccionId: bigint): s
 }
 
 /**
+ * Lee el primer valor string no vacío entre varias claves posibles.
+ * Mercado Pago devuelve la `metadata` de la preferencia con las claves en
+ * snake_case (p. ej. `nombre_razon_social`), aunque se hayan enviado en
+ * camelCase; por eso se aceptan ambas variantes.
+ */
+function leerDatoFacturacion(
+  datos: Record<string, unknown>,
+  claves: string[]
+): string | undefined {
+  for (const clave of claves) {
+    const valor = datos[clave];
+
+    if (typeof valor === "string" && valor.trim().length > 0) {
+      return valor.trim();
+    }
+  }
+
+  return undefined;
+}
+
+/**
  * Extrae los datos de facturación propagados vía `metadata` de la preferencia.
  * Si faltaran (p. ej. una preferencia creada fuera de este flujo), se usan
  * valores por defecto no vacíos para no bloquear la emisión.
@@ -85,20 +119,20 @@ function extraerFacturacion(metadata: unknown, emailContacto: string): Facturaci
       ? (metadata as Record<string, unknown>)
       : {};
 
-  const tipo = datos.tipoFactura;
-  const nombre = datos.nombreRazonSocial;
-  const identificacion = datos.identificacionFiscal;
+  const tipo = leerDatoFacturacion(datos, ["tipoFactura", "tipo_factura"]);
+  const nombre = leerDatoFacturacion(datos, [
+    "nombreRazonSocial",
+    "nombre_razon_social",
+  ]);
+  const identificacion = leerDatoFacturacion(datos, [
+    "identificacionFiscal",
+    "identificacion_fiscal",
+  ]);
 
   return {
     tipoFactura: tipo === "A" || tipo === "B" || tipo === "C" ? tipo : "B",
-    nombreRazonSocial:
-      typeof nombre === "string" && nombre.trim().length > 0
-        ? nombre
-        : emailContacto,
-    identificacionFiscal:
-      typeof identificacion === "string" && identificacion.trim().length > 0
-        ? identificacion
-        : "CONSUMIDOR FINAL",
+    nombreRazonSocial: nombre ?? emailContacto,
+    identificacionFiscal: identificacion ?? "CONSUMIDOR FINAL",
   };
 }
 
@@ -141,19 +175,17 @@ export async function crearPreferenciaDePago(
   // El total es exactamente precio * cantidad, por lo que redondear a 2
   // decimales recupera el precio unitario original.
   const precioUnitario = Number((total / cantidad).toFixed(2));
-  const urlRetorno = `${getBaseUrl()}/checkout/resultado?transaccionId=${transaccion.id.toString()}`;
+  const baseUrl = getBaseUrl();
 
   let preference;
   try {
     preference = await getPreferenceClient().create({
       body: {
         external_reference: transaccion.id.toString(),
-        notification_url: `${getBaseUrl()}/api/v1/webhooks/mercadopago`,
-        back_urls: {
-          success: urlRetorno,
-          pending: urlRetorno,
-          failure: urlRetorno,
-        },
+        notification_url: `${baseUrl}/api/v1/webhooks/mercadopago`,
+        // Sin `back_urls` ni `auto_return`: el comprador permanece en Mercado
+        // Pago. La confirmación y el envío de comprobantes se resuelven por
+        // webhook o por el proceso de conciliación en segundo plano.
         items: [
           {
             id: input.instanciaVueloId,
@@ -240,9 +272,10 @@ export async function consultarPagoEnPasarela(paymentId: string | number) {
  * @throws {PagoError} `PAGO_NO_ENCONTRADO` si Mercado Pago no reconoce el pago.
  * @throws {PagoError} `PAYMENT_GATEWAY_UNAVAILABLE` si la consulta inversa falla.
  */
+
 export async function procesarNotificacionPago(
   payload: WebhookPayload
-): Promise<{ processed: boolean; estado?: EstadoPago }> {
+): Promise<ResultadoNotificacionPago> {
   const paymentId = payload.data?.id;
 
   if (payload.type !== "payment" || paymentId === undefined || paymentId === null) {
@@ -259,10 +292,11 @@ export async function procesarNotificacionPago(
     );
     return { processed: false };
   }
+  
 
   const transaccionId = BigInt(externalReference);
 
-  return prisma.$transaction(async (tx) => {
+  const resultado = await prisma.$transaction(async (tx) => {
     const transaccion = await tx.transaccionCompra.findFirst({
       where: { id: transaccionId, deleted: false },
       select: { id: true, total: true, emailContacto: true },
@@ -282,7 +316,7 @@ export async function procesarNotificacionPago(
     });
 
     if (pagoExistente?.estado === "APROBADO") {
-      return { processed: true as const, estado: "APROBADO" as const };
+      return { processed: true as const, estado: "APROBADO" as const, yaProcesado: true as const };
     }
 
     // Coherencia contable: el monto cobrado debe igualar el total de la orden.
@@ -323,6 +357,24 @@ export async function procesarNotificacionPago(
     });
 
     if (estadoPago === "APROBADO") {
+      // Si la reserva había expirado por TTL (o un rechazo previo canceló los
+      // pasajes), se reactivan solo si el cupo sigue disponible. El pago queda
+      // registrado igualmente para no perder el cobro.
+      const reactivacion = await reactivarPasajesDeTransaccion(tx, transaccionId);
+
+      if (!reactivacion.ok) {
+        console.error(
+          `[Pagos] Pago aprobado de la transacción ${externalReference}, pero no se pudo emitir: ${reactivacion.motivo} Requiere intervención manual (posible reembolso).`
+        );
+
+        return {
+          processed: true as const,
+          estado: "APROBADO" as const,
+          yaProcesado: false as const,
+          emisionBloqueada: true as const,
+        };
+      }
+
       await tx.transaccionCompra.update({
         where: { id: transaccionId },
         data: { estado: "CONFIRMADA" },
@@ -363,8 +415,103 @@ export async function procesarNotificacionPago(
       });
     }
 
-    return { processed: true as const, estado: estadoPago };
+    return { processed: true as const, estado: estadoPago, yaProcesado: false as const };
   });
+
+  // Emisión automática de pasajes y factura (User Story 11)
+  // Criterio de Aceptación 1: Se emite un pasaje por pasajero y la factura correspondiente
+  // Criterio de Aceptación 2: El pasajero recibe el email en 2 minutos o menos
+  // Criterio de Aceptación 3: No se emite ningún comprobante si el pago no fue aprobado
+  if (
+    resultado.processed &&
+    resultado.estado === "APROBADO" &&
+    !resultado.yaProcesado &&
+    !resultado.emisionBloqueada
+  ) {
+    try {
+      await enviarComprobantesCompra(transaccionId);
+    } catch (error) {
+      console.error(
+        `[Notificaciones] Error en envío automático de comprobantes para transacción #${transaccionId.toString()}:`,
+        error
+      );
+    }
+  }
+
+  return { processed: resultado.processed, estado: resultado.estado };
+}
+
+/**
+ * Sincroniza el estado del pago directamente con Mercado Pago cuando el usuario
+ * retorna a la pantalla de resultado en entornos donde el webhook no puede
+ * impactar directamente (como desarrollo local sin túnel público).
+ */
+export async function sincronizarPagoDesdeRetorno(params: {
+  transaccionId?: string | null;
+  paymentId?: string | null;
+  status?: string | null;
+}): Promise<void> {
+  const transaccionIdStr = params.transaccionId;
+  if (!transaccionIdStr || !/^\d+$/.test(transaccionIdStr)) {
+    return;
+  }
+
+  const transaccionId = BigInt(transaccionIdStr);
+
+  const transaccion = await prisma.transaccionCompra.findFirst({
+    where: { id: transaccionId, deleted: false },
+    select: { estado: true },
+  });
+
+  // Se sincroniza tanto un hold vigente como uno rechazado por TTL: el pago
+  // pudo aprobarse después del vencimiento y la compra todavía es recuperable.
+  if (
+    !transaccion ||
+    (transaccion.estado !== "PENDIENTE" && transaccion.estado !== "RECHAZADA")
+  ) {
+    return;
+  }
+
+  const paymentId = params.paymentId;
+  if (paymentId && /^\d+$/.test(paymentId)) {
+    try {
+      await procesarNotificacionPago({
+        type: "payment",
+        data: { id: paymentId },
+      });
+      return;
+    } catch (error) {
+      console.warn(
+        `[Pagos] Error al sincronizar pago con ID ${paymentId} en retorno:`,
+        error
+      );
+    }
+  }
+
+  // Fallback: Si no vino el paymentId en URL, consultar a Mercado Pago por external_reference
+  try {
+    const search = await getPaymentClient().search({
+      options: {
+        external_reference: transaccionId.toString(),
+        sort: "date_created",
+        criteria: "desc",
+        limit: 1,
+      },
+    });
+
+    const ultimoPago = search.results?.[0];
+    if (ultimoPago?.id && ultimoPago.status === "approved") {
+      await procesarNotificacionPago({
+        type: "payment",
+        data: { id: ultimoPago.id },
+      });
+    }
+  } catch (error) {
+    console.warn(
+      `[Pagos] No se pudo buscar el pago de la transacción #${transaccionId.toString()} en Mercado Pago:`,
+      error
+    );
+  }
 }
 
 /**
@@ -384,7 +531,7 @@ export async function consultarEstadoTransaccion(id: bigint | string) {
 
   const transaccionId = typeof id === "string" ? BigInt(id) : id;
 
-  const transaccion = await prisma.transaccionCompra.findFirst({
+  let transaccion = await prisma.transaccionCompra.findFirst({
     where: { id: transaccionId, deleted: false },
     include: { pago: true, factura: true, pasajes: true },
   });
@@ -394,6 +541,22 @@ export async function consultarEstadoTransaccion(id: bigint | string) {
       "TRANSACCION_NO_ENCONTRADA",
       "La transacción indicada no existe."
     );
+  }
+
+  // Si la transacción sigue PENDIENTE o fue rechazada por expiración del hold
+  // (ej. en desarrollo local donde el webhook de MP no puede llegar),
+  // intentamos sincronizar con Mercado Pago para confirmar automáticamente y
+  // despachar los comprobantes.
+  if (transaccion.estado === "PENDIENTE" || transaccion.estado === "RECHAZADA") {
+    await sincronizarPagoDesdeRetorno({ transaccionId: transaccionId.toString() });
+
+    const recargada = await prisma.transaccionCompra.findFirst({
+      where: { id: transaccionId, deleted: false },
+      include: { pago: true, factura: true, pasajes: true },
+    });
+    if (recargada) {
+      transaccion = recargada;
+    }
   }
 
   return {
