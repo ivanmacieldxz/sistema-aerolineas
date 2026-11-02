@@ -4,7 +4,7 @@ import { Show, UserButton } from "@clerk/nextjs";
 
 export function Topbar() {
   return (
-    <div className="w-full bg-page">
+    <div className="pwa-safe-top w-full bg-page">
       <header className="mx-auto flex h-[72px] w-full max-w-7xl items-center justify-between px-5 text-ink sm:px-8">
         <Link
           href="/vuelos"

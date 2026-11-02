@@ -1,6 +1,9 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
+import { InstallPrompt } from "@/components/pwa/InstallPrompt";
+import { OfflineBanner } from "@/components/pwa/OfflineBanner";
+import { ServiceWorkerRegistrar } from "@/components/pwa/ServiceWorkerRegistrar";
 import { Topbar } from "@/components/topbar";
 import { AuthSync } from "@/modules/usuarios/components/AuthSync";
 import "./globals.css";
@@ -18,6 +21,28 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Aerolínea | Búsqueda de vuelos",
   description: "Buscá vuelos programados por origen, destino y fecha.",
+  applicationName: "Aerolínea",
+  appleWebApp: {
+    capable: true,
+    title: "Aerolínea",
+    statusBarStyle: "default",
+  },
+  formatDetection: {
+    telephone: false,
+  },
+  other: {
+    // Next 16 emite "mobile-web-app-capable"; iOS sigue usando la variante
+    // con prefijo apple para abrir la PWA en modo standalone.
+    "apple-mobile-web-app-capable": "yes",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#174b3f",
+  colorScheme: "light",
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -43,8 +68,11 @@ export default function RootLayout({
           }}
         >
           <AuthSync />
+          <ServiceWorkerRegistrar />
+          <OfflineBanner />
           <Topbar />
           <div className="flex flex-1 flex-col">{children}</div>
+          <InstallPrompt />
         </ClerkProvider>
       </body>
     </html>

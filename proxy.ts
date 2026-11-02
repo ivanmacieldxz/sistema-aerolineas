@@ -4,6 +4,8 @@ import { HOME_POR_ROL, normalizarRol } from "@/modules/usuarios/roles";
 
 const esRutaPublica = createRouteMatcher([
   "/",
+  "/offline.html",
+  "/manifest.webmanifest",
   "/vuelos(.*)",
   "/checkout(.*)",
   "/login(.*)",
@@ -76,7 +78,8 @@ export const proxy = clerkMiddleware(async (auth, request) => {
 export const config = {
   matcher: [
     // Rutas de página excluyendo estáticos de Next.js e imágenes/fuentes.
-    "/((?!_next/|favicon\\.ico|.*\\.(?:png|jpe?g|gif|svg|webp|ico|css|js|map|woff2?)$).*)",
+    // sw.js, manifest.webmanifest y offline.html deben quedar fuera del proxy.
+    "/((?!_next/|favicon\\.ico|manifest\\.webmanifest|offline\\.html|.*\\.(?:png|jpe?g|gif|svg|webp|ico|css|js|map|woff2?)$).*)",
     // API REST (app móvil) y trpc.
     "/(api|trpc)(.*)",
     // Endpoint interno de Clerk (recursos del <ClerkProvider>).
