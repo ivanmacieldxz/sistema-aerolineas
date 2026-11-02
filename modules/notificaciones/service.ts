@@ -3,7 +3,17 @@ import { formatTime, formatDate, formatDateShort } from "@/modules/vuelos/utils"
 import { generarPasajePDF } from "./pdf/pasaje-pdf";
 import { generarFacturaPDF } from "./pdf/factura-pdf";
 import { getEmailTransporter } from "./email/client";
-import { construirEmailConfirmacion } from "./email/templates";
+import nodemailer from "nodemailer";
+import {
+  construirEmailConfirmacion,
+  construirEmailCancelacionVuelo,
+  construirEmailCambioHorario,
+} from "./email/templates";
+import type {
+  SalidaCanceladaInfo,
+  CambioHorarioInfo,
+  PasajeroAfectado,
+} from "@/modules/vuelos/service";
 
 export type ResultadoEnvioComprobantes =
   | { success: true; messageId?: string; pasajesEnviados: number }
@@ -186,4 +196,185 @@ export async function enviarComprobantesCompra(
     messageId: info.messageId,
     pasajesEnviados: adjuntosPasajes.length,
   };
+}
+
+export type ResultadoNotificacionMasiva = {
+  totalAfectados: number;
+  emailsEnviados: number;
+  errores: number;
+};
+
+  /**
+   * Notifica por email a todos los pasajeros afectados por la cancelación de una salida.
+   * Agrupa pasajeros por `emailContacto` para enviar un único correo consolidado por compra.
+   */
+  export async function notificarCancelacionSalida(
+    salidaInfo: SalidaCanceladaInfo
+  ): Promise<ResultadoNotificacionMasiva> {
+    const totalAfectados = salidaInfo.pasajerosAfectados.length;
+    if (totalAfectados === 0) {
+      return { totalAfectados: 0, emailsEnviados: 0, errores: 0 };
+    }
+  
+    // Agrupar pasajes por el email de contacto del comprador
+    const gruposPorEmail = new Map<string, PasajeroAfectado[]>();
+    for (const pasajero of salidaInfo.pasajerosAfectados) {
+      const emailRaw = pasajero.emailContacto;
+      if (!emailRaw || typeof emailRaw !== "string") {
+        console.error("[notificarCancelacionSalida] emailContacto inválido para pasaje:", pasajero.pasajeCodigo);
+        continue;
+      }
+      const email = emailRaw.trim().toLowerCase();
+      if (!email) {
+        console.error("[notificarCancelacionSalida] emailContacto vacío para pasaje:", pasajero.pasajeCodigo);
+        continue;
+      }
+      const lista = gruposPorEmail.get(email) ?? [];
+      lista.push(pasajero);
+      gruposPorEmail.set(email, lista);
+    }
+  
+    if (gruposPorEmail.size === 0) {
+      console.error("[notificarCancelacionSalida] No hay emails válidos para notificar. totalAfectados:", totalAfectados);
+      return { totalAfectados, emailsEnviados: 0, errores: totalAfectados };
+    }
+  
+    const transporter = await getEmailTransporter();
+    const remitente =
+      process.env.SMTP_FROM ?? '"Sistema Aerolínea" <no-reply@aerolineas.com>';
+  
+    const envios = Array.from(gruposPorEmail.entries()).map(
+      async ([email, pasajeros]) => {
+        const { asunto, html, textoPlano } = construirEmailCancelacionVuelo({
+          emailDestinatario: email,
+          numeroVuelo: salidaInfo.numeroVuelo,
+          origen: salidaInfo.origen,
+          destino: salidaInfo.destino,
+          fechaSalida: salidaInfo.fechaSalida,
+          horaSalida: salidaInfo.horaSalida,
+          pasajeros: pasajeros.map((p) => ({
+            nombre: p.pasajeroNombre,
+            apellido: p.pasajeroApellido,
+            documento: p.pasajeroDocumento,
+            codigoPasaje: p.pasajeCodigo,
+            asiento: p.numeroAsiento,
+            clase: p.clase,
+          })),
+        });
+  
+      const info = await transporter.sendMail({
+        from: remitente,
+        to: email,
+        subject: asunto,
+        text: textoPlano,
+        html,
+      });
+      console.log("[notificarCancelacionSalida] enviado a", email, "messageId:", info.messageId);
+      try {
+        // @ts-ignore
+        const url = nodemailer.getTestMessageUrl?.(info);
+        if (url) console.log("[notificarCancelacionSalida] preview:", url);
+      } catch {}
+      return info;
+      }
+    );
+
+  const resultados = await Promise.allSettled(envios);
+  let emailsEnviados = 0;
+  let errores = 0;
+
+  for (const res of resultados) {
+    if (res.status === "fulfilled") {
+      emailsEnviados++;
+    } else {
+      errores++;
+      console.error(
+        "[notificarCancelacionSalida] Error enviando correo de cancelación:",
+        res.reason
+      );
+    }
+  }
+
+  return { totalAfectados, emailsEnviados, errores };
+}
+
+/**
+ * Notifica por email a todos los pasajeros de salidas futuras afectadas por un cambio de horario.
+ * Agrupa por comprador/email por cada fecha de vuelo.
+ */
+export async function notificarCambioHorarioVuelo(
+  cambioHorario: CambioHorarioInfo
+): Promise<ResultadoNotificacionMasiva> {
+  let totalAfectados = 0;
+  const transporter = await getEmailTransporter();
+  const remitente =
+    process.env.SMTP_FROM ?? '"Sistema Aerolínea" <no-reply@aerolineas.com>';
+
+  const tareasEnvio: Array<Promise<unknown>> = [];
+
+  for (const instancia of cambioHorario.instanciasAfectadas) {
+    totalAfectados += instancia.pasajerosAfectados.length;
+    if (instancia.pasajerosAfectados.length === 0) continue;
+
+    // Agrupar pasajes de esta salida por comprador/email
+    const gruposPorEmail = new Map<string, PasajeroAfectado[]>();
+    for (const pasajero of instancia.pasajerosAfectados) {
+      const email = pasajero.emailContacto.trim().toLowerCase();
+      const lista = gruposPorEmail.get(email) ?? [];
+      lista.push(pasajero);
+      gruposPorEmail.set(email, lista);
+    }
+
+    for (const [email, pasajeros] of gruposPorEmail.entries()) {
+      const { asunto, html, textoPlano } = construirEmailCambioHorario({
+        emailDestinatario: email,
+        numeroVuelo: cambioHorario.numeroVuelo,
+        origen: cambioHorario.origen,
+        destino: cambioHorario.destino,
+        fechaSalida: instancia.fechaSalida,
+        horarioAnterior: cambioHorario.horarioAnterior,
+        nuevoHorario: cambioHorario.nuevoHorario,
+        pasajeros: pasajeros.map((p) => ({
+          nombre: p.pasajeroNombre,
+          apellido: p.pasajeroApellido,
+          documento: p.pasajeroDocumento,
+          codigoPasaje: p.pasajeCodigo,
+          asiento: p.numeroAsiento,
+          clase: p.clase,
+        })),
+      });
+
+      tareasEnvio.push(
+        transporter.sendMail({
+          from: remitente,
+          to: email,
+          subject: asunto,
+          text: textoPlano,
+          html,
+        })
+      );
+    }
+  }
+
+  if (tareasEnvio.length === 0) {
+    return { totalAfectados: 0, emailsEnviados: 0, errores: 0 };
+  }
+
+  const resultados = await Promise.allSettled(tareasEnvio);
+  let emailsEnviados = 0;
+  let errores = 0;
+
+  for (const res of resultados) {
+    if (res.status === "fulfilled") {
+      emailsEnviados++;
+    } else {
+      errores++;
+      console.error(
+        "[notificarCambioHorarioVuelo] Error enviando correo de cambio de horario:",
+        res.reason
+      );
+    }
+  }
+
+  return { totalAfectados, emailsEnviados, errores };
 }

@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client";
+import type { Prisma, Vuelo } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { filtroPasajeOcupaCupo } from "@/modules/pasajes/service";
 import { parseTimeStringToDate, generarFechasPorDias } from "./utils";
@@ -30,6 +30,53 @@ export type FlightInstanceSearchResult = {
   plazasDisponiblesPrimera: number;
   precioPrimera: number;
   estado: string;
+};
+
+export type PasajeroAfectado = {
+  pasajeCodigo: string;
+  pasajeroNombre: string;
+  pasajeroApellido: string;
+  pasajeroDocumento: string;
+  numeroAsiento: string | null;
+  clase: string;
+  transaccionId: string;
+  emailContacto: string;
+};
+
+export type SalidaCanceladaInfo = {
+  instanciaId: string;
+  numeroVuelo: string;
+  origen: { iata: string; ciudad: string; nombre: string };
+  destino: { iata: string; ciudad: string; nombre: string };
+  fechaSalida: string;
+  horaSalida: string;
+  horaLlegada: string;
+  pasajerosAfectados: PasajeroAfectado[];
+};
+
+export type CambioHorarioInfo = {
+  vueloId: string;
+  numeroVuelo: string;
+  origen: { iata: string; ciudad: string; nombre: string };
+  destino: { iata: string; ciudad: string; nombre: string };
+  horarioAnterior: { horaSalida: string; horaLlegada: string };
+  nuevoHorario: { horaSalida: string; horaLlegada: string };
+  instanciasAfectadas: Array<{
+    instanciaId: string;
+    fechaSalida: string;
+    pasajerosAfectados: PasajeroAfectado[];
+  }>;
+};
+
+export type ResultadoCancelacionSalida = {
+  canceledTickets: number;
+  salidaInfo: SalidaCanceladaInfo;
+};
+
+export type ResultadoActualizacionVuelo = {
+  vuelo: Vuelo;
+  cambioHorario: CambioHorarioInfo | null;
+  instanciasCanceladas: SalidaCanceladaInfo[];
 };
 
 export type FlightClassOccupancySummary = {
@@ -201,10 +248,13 @@ async function contarPasajesActivosPorClase(vueloId: bigint, clase: "ECONOMY" | 
   });
 }
 
-export async function updateFlightById(vueloId: bigint, data: FlightFormValues) {
+export async function updateFlightById(
+  vueloId: bigint,
+  data: FlightFormValues
+): Promise<ResultadoActualizacionVuelo> {
   const vueloActual = await prisma.vuelo.findFirst({
     where: { id: vueloId, deleted: false },
-    include: { diasSemana: true },
+    include: { diasSemana: true, origen: true, destino: true },
   });
 
   if (!vueloActual) {
@@ -233,6 +283,13 @@ export async function updateFlightById(vueloId: bigint, data: FlightFormValues) 
       `La capacidad de Primera no puede quedar por debajo de los pasajes ya vendidos (${ocupadosPrimera}).`
     );
   }
+
+  const horaSalidaActualStr = new Date(vueloActual.horaSalida).toISOString().slice(11, 16);
+  const horaLlegadaActualStr = new Date(vueloActual.horaLlegada).toISOString().slice(11, 16);
+
+  const huboCambioHorario =
+    horaSalidaActualStr !== data.horaSalida ||
+    horaLlegadaActualStr !== data.horaLlegada;
 
   const horaSalidaDate = parseTimeStringToDate(data.horaSalida);
   const horaLlegadaDate = parseTimeStringToDate(data.horaLlegada);
@@ -333,22 +390,65 @@ export async function updateFlightById(vueloId: bigint, data: FlightFormValues) 
       });
     }
 
+    const instanciasCanceladas: SalidaCanceladaInfo[] = [];
+
     for (const instancia of fechasAEliminar) {
       if (instancia.estado === "CANCELADO" || instancia.deleted) {
         continue;
       }
 
-      const tienePasajesActivos = await tx.pasaje.count({
+      const pasajesActivos = await tx.pasaje.findMany({
         where: {
           instanciaVueloId: instancia.id,
           estado: { in: ["EMITIDO", "CHECK_IN"] },
         },
+        include: {
+          transaccion: {
+            select: { id: true, emailContacto: true },
+          },
+        },
       });
 
-      if (tienePasajesActivos > 0) {
+      if (pasajesActivos.length > 0) {
         await tx.instanciaVuelo.update({
           where: { id: instancia.id },
           data: { estado: "CANCELADO", deleted: false },
+        });
+
+        await tx.pasaje.updateMany({
+          where: {
+            instanciaVueloId: instancia.id,
+            estado: { in: ["EMITIDO", "CHECK_IN"] },
+          },
+          data: { estado: "CANCELADO" },
+        });
+
+        instanciasCanceladas.push({
+          instanciaId: instancia.id.toString(),
+          numeroVuelo: data.numeroVuelo,
+          origen: {
+            iata: vueloActual.origen.iataCode,
+            ciudad: vueloActual.origen.ciudad,
+            nombre: vueloActual.origen.nombre,
+          },
+          destino: {
+            iata: vueloActual.destino.iataCode,
+            ciudad: vueloActual.destino.ciudad,
+            nombre: vueloActual.destino.nombre,
+          },
+          fechaSalida: instancia.fechaSalida.toISOString().slice(0, 10),
+          horaSalida: horaSalidaActualStr,
+          horaLlegada: horaLlegadaActualStr,
+          pasajerosAfectados: pasajesActivos.map((p) => ({
+            pasajeCodigo: p.codigo.toString(),
+            pasajeroNombre: p.pasajeroNombre,
+            pasajeroApellido: p.pasajeroApellido,
+            pasajeroDocumento: p.pasajeroDocumento,
+            numeroAsiento: p.numeroAsiento,
+            clase: p.clase,
+            transaccionId: p.transaccion.id.toString(),
+            emailContacto: p.transaccion.emailContacto,
+          })),
         });
       } else {
         await tx.instanciaVuelo.update({
@@ -358,7 +458,81 @@ export async function updateFlightById(vueloId: bigint, data: FlightFormValues) 
       }
     }
 
-    return vueloActualizado;
+    let cambioHorario: CambioHorarioInfo | null = null;
+
+    if (huboCambioHorario) {
+      const hoy = new Date();
+      hoy.setUTCHours(0, 0, 0, 0);
+
+      const instanciasFuturasConPasajes = await tx.instanciaVuelo.findMany({
+        where: {
+          vueloId,
+          fechaSalida: { gte: hoy },
+          estado: { not: "CANCELADO" },
+          deleted: false,
+        },
+        include: {
+          pasajes: {
+            where: {
+              estado: { in: ["EMITIDO", "CHECK_IN"] },
+            },
+            include: {
+              transaccion: {
+                select: { id: true, emailContacto: true },
+              },
+            },
+          },
+        },
+        orderBy: { fechaSalida: "asc" },
+      });
+
+      const instanciasAfectadas = instanciasFuturasConPasajes
+        .filter((inst) => inst.pasajes.length > 0)
+        .map((inst) => ({
+          instanciaId: inst.id.toString(),
+          fechaSalida: inst.fechaSalida.toISOString().slice(0, 10),
+          pasajerosAfectados: inst.pasajes.map((p) => ({
+            pasajeCodigo: p.codigo.toString(),
+            pasajeroNombre: p.pasajeroNombre,
+            pasajeroApellido: p.pasajeroApellido,
+            pasajeroDocumento: p.pasajeroDocumento,
+            numeroAsiento: p.numeroAsiento,
+            clase: p.clase,
+            transaccionId: p.transaccion.id.toString(),
+            emailContacto: p.transaccion.emailContacto,
+          })),
+        }));
+
+      cambioHorario = {
+        vueloId: vueloId.toString(),
+        numeroVuelo: data.numeroVuelo,
+        origen: {
+          iata: vueloActual.origen.iataCode,
+          ciudad: vueloActual.origen.ciudad,
+          nombre: vueloActual.origen.nombre,
+        },
+        destino: {
+          iata: vueloActual.destino.iataCode,
+          ciudad: vueloActual.destino.ciudad,
+          nombre: vueloActual.destino.nombre,
+        },
+        horarioAnterior: {
+          horaSalida: horaSalidaActualStr,
+          horaLlegada: horaLlegadaActualStr,
+        },
+        nuevoHorario: {
+          horaSalida: data.horaSalida,
+          horaLlegada: data.horaLlegada,
+        },
+        instanciasAfectadas,
+      };
+    }
+
+    return {
+      vuelo: vueloActualizado,
+      cambioHorario,
+      instanciasCanceladas,
+    };
   });
 }
 
@@ -827,7 +1001,9 @@ export async function getFlightOccupancyReport(filters?: {
     .sort((a, b) => a.numeroVuelo.localeCompare(b.numeroVuelo));
 }
 
-export async function cancelFlightInstance(instanciaId: bigint): Promise<number> {
+export async function cancelFlightInstance(
+  instanciaId: bigint
+): Promise<ResultadoCancelacionSalida> {
   return prisma.$transaction(async (tx) => {
     const instance = await tx.instanciaVuelo.findFirst({
       where: {
@@ -839,7 +1015,34 @@ export async function cancelFlightInstance(instanciaId: bigint): Promise<number>
         id: true,
         fechaSalida: true,
         estado: true,
-        vuelo: { select: { horaSalida: true } },
+        vuelo: {
+          select: {
+            numeroVuelo: true,
+            horaSalida: true,
+            horaLlegada: true,
+            origen: { select: { iataCode: true, ciudad: true, nombre: true } },
+            destino: { select: { iataCode: true, ciudad: true, nombre: true } },
+          },
+        },
+        pasajes: {
+          where: {
+            estado: { in: ["EMITIDO", "CHECK_IN"] },
+          },
+          select: {
+            codigo: true,
+            pasajeroNombre: true,
+            pasajeroApellido: true,
+            pasajeroDocumento: true,
+            numeroAsiento: true,
+            clase: true,
+            transaccion: {
+              select: {
+                id: true,
+                emailContacto: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -888,7 +1091,40 @@ export async function cancelFlightInstance(instanciaId: bigint): Promise<number>
       data: { estado: "CANCELADO" },
     });
 
-    return canceledTickets.count;
+    const pasajerosAfectados: PasajeroAfectado[] = instance.pasajes.map((p) => ({
+      pasajeCodigo: p.codigo.toString(),
+      pasajeroNombre: p.pasajeroNombre,
+      pasajeroApellido: p.pasajeroApellido,
+      pasajeroDocumento: p.pasajeroDocumento,
+      numeroAsiento: p.numeroAsiento,
+      clase: p.clase,
+      transaccionId: p.transaccion.id.toString(),
+      emailContacto: p.transaccion.emailContacto,
+    }));
+
+    const salidaInfo: SalidaCanceladaInfo = {
+      instanciaId: instance.id.toString(),
+      numeroVuelo: instance.vuelo.numeroVuelo,
+      origen: {
+        iata: instance.vuelo.origen.iataCode,
+        ciudad: instance.vuelo.origen.ciudad,
+        nombre: instance.vuelo.origen.nombre,
+      },
+      destino: {
+        iata: instance.vuelo.destino.iataCode,
+        ciudad: instance.vuelo.destino.ciudad,
+        nombre: instance.vuelo.destino.nombre,
+      },
+      fechaSalida: instance.fechaSalida.toISOString().slice(0, 10),
+      horaSalida: new Date(instance.vuelo.horaSalida).toISOString().slice(11, 16),
+      horaLlegada: new Date(instance.vuelo.horaLlegada).toISOString().slice(11, 16),
+      pasajerosAfectados,
+    };
+
+    return {
+      canceledTickets: canceledTickets.count,
+      salidaInfo,
+    };
   });
 }
 
