@@ -271,8 +271,7 @@ export type ResultadoNotificacionMasiva = {
       });
       console.log("[notificarCancelacionSalida] enviado a", email, "messageId:", info.messageId);
       try {
-        // @ts-ignore
-        const url = nodemailer.getTestMessageUrl?.(info);
+        const url = nodemailer.getTestMessageUrl(info);
         if (url) console.log("[notificarCancelacionSalida] preview:", url);
       } catch {}
       return info;

@@ -17,11 +17,10 @@ async function main() {
 
   const pasajes = await prisma.pasaje.findMany({
     take: 10,
-    orderBy: { id: "desc" },
+    orderBy: { codigo: "desc" },
     include: { transaccion: true, instanciaVuelo: { include: { vuelo: true } } },
   });
   console.log("Últimos 10 pasajes:", JSON.stringify(pasajes.map(p => ({
-    id: p.id.toString(),
     codigo: p.codigo.toString(),
     estado: p.estado,
     email: p.transaccion.emailContacto,
